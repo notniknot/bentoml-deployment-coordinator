@@ -1,9 +1,12 @@
 import secrets
-from fastapi import Depends, FastAPI, HTTPException, status
+from typing import Union
+
+from fastapi import Depends, FastAPI, HTTPException, Response, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+
+from app.docker_deployment import DockerDeployment
+from app.models import DeployModelInput, RuntimeEnv, RuntimeEnvType, UndeployModelInput
 from app.tmux_deployment import TmuxDeployment
-from app.models import DeployModelInput, UndeployModelInput
-from fastapi import Response
 
 app = FastAPI()
 
@@ -22,20 +25,41 @@ def authenticate(credentials: HTTPBasicCredentials = Depends(security)):
     return credentials.username
 
 
+def get_runtime_env(runtime_env: RuntimeEnvType) -> Union[DockerDeployment, TmuxDeployment]:
+    if runtime_env == RuntimeEnv.DOCKER:
+        return DockerDeployment
+    if runtime_env == RuntimeEnv.TMUX:
+        return TmuxDeployment
+
+
 @app.post("/start", dependencies=[Depends(authenticate)])
 async def start(model_content: DeployModelInput):
-    tmux = TmuxDeployment(model_content.model, model_content.version, model_content.env)
-    response = tmux.deploy_model(port=model_content.port)
+    runtime_env = get_runtime_env(model_content.runtime_env)
+    runtime_env_instance = runtime_env(
+        model_content.model, model_content.version, model_content.namespace
+    )
+    response = runtime_env_instance.deploy_model(
+        port=model_content.port, workers=model_content.workers
+    )
     return Response(status_code=status.HTTP_200_OK, content=response)
 
 
 @app.post("/stop", dependencies=[Depends(authenticate)])
 async def stop(model_content: UndeployModelInput):
-    tmux = TmuxDeployment(model_content.model, model_content.version, model_content.env)
-    response = tmux.undeploy_model()
+    runtime_env = get_runtime_env(model_content.runtime_env)
+    runtime_env_instance = runtime_env(
+        model_content.model, model_content.version, model_content.namespace
+    )
+    response = runtime_env_instance.undeploy_model()
     return Response(status_code=status.HTTP_200_OK, content=response)
 
 
 @app.get("/running")
 async def running():
-    return TmuxDeployment.get_running_models()
+    return {
+        'tmux': TmuxDeployment.get_running_models(),
+        'docker': DockerDeployment.get_running_models(),
+    }
+
+
+# ToDo: Log to MLflow/Page?

@@ -8,9 +8,10 @@ import libtmux
 import yaml
 from conda.cli.python_api import Commands, run_command
 from fastapi import HTTPException, status
+from libtmux.exc import LibTmuxException
 
 from app.base_deployment import Deployment
-from app.models import Envs
+from app.models import NamespaceType
 
 
 class TmuxDeployment(Deployment):
@@ -18,12 +19,12 @@ class TmuxDeployment(Deployment):
     BENTOML_FLASK_SERVING_STR = 'Serving Flask app'
     BENTOML_GUNICORN_SERVING_STR = 'Booting worker'
 
-    def __init__(self, model: str, version: str, env: Envs):
-        super().__init__(model, version, env)
+    def __init__(self, model: str, version: str, namespace: NamespaceType):
+        super().__init__(model, version, namespace)
         model_clean = re.sub(r'\W+', '', self.model)
-        self.env_name = f'{self.env}_{model_clean}'
+        self.env_name = f'{self.namespace}_{model_clean}'
         self.prefix = os.path.abspath(os.path.join('./envs', self.env_name))
-        self.session_name = f'bentoml_{self.env}_{model_clean}'
+        self.session_name = f'bentoml_{self.namespace}_{model_clean}'
 
     def deploy_model(self, port: int, workers: int):
         server = libtmux.Server()
@@ -37,12 +38,12 @@ class TmuxDeployment(Deployment):
         session = server.new_session(session_name=self.session_name)
         session.set_environment('model_name', self.model)
         session.set_environment('model_version', self.version)
-        session.set_environment('model_env', self.env)
+        session.set_environment('model_env', self.namespace)
         session.set_environment('model_port', port)
         session.set_environment('model_workers', workers)
         pane = session.attached_pane
         pane.send_keys(f'conda activate {self.prefix}')
-        if self.env == 'dev':
+        if self.namespace == 'dev':
             pane.send_keys(f'bentoml serve --port {port} {self.model}:{self.version}')
         else:
             pane.send_keys(
@@ -63,7 +64,10 @@ class TmuxDeployment(Deployment):
     @classmethod
     def get_running_models(self):
         server = libtmux.Server()
-        sessions = server.list_sessions()
+        try:
+            sessions = server.list_sessions()
+        except LibTmuxException:
+            return list()
         sessions_fmt = []
         for session in sessions:
             name = session.get('session_name')
@@ -73,7 +77,7 @@ class TmuxDeployment(Deployment):
                 {
                     'model': session.show_environment('model_name'),
                     'version': session.show_environment('model_version'),
-                    'env': session.show_environment('model_env'),
+                    'namespace': session.show_environment('model_namespace'),
                     'port': session.show_environment('model_port'),
                     'workers': session.show_environment('model_workers'),
                 }

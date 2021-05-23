@@ -1,4 +1,4 @@
-from base_deployment import Deployment
+from app.base_deployment import Deployment
 
 
 class DockerDeployment(Deployment):

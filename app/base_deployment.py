@@ -5,12 +5,12 @@ from bentoml.yatai.client import get_yatai_client
 
 
 class Deployment:
-    def __init__(self, model: str, version: str, env: str):
+    def __init__(self, model: str, version: str, namespace: str):
         self.logger = Deployment.init_logger()
-        self.logger.info(f'Initializing {type(self).__name__}: {model}:{version} ({env})')
+        self.logger.info(f'Initializing {type(self).__name__}: {model}:{version} ({namespace})')
         self.model = model
         self.version = version
-        self.env = env.value
+        self.namespace = namespace.value
 
     def get_bentoml_model_by_version(self):
         yatai_client = get_yatai_client()
@@ -31,7 +31,7 @@ class Deployment:
 
     @classmethod
     def get_running_models(self):
-        pass
+        return list()
 
     def _is_port_in_use(self, port: int):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

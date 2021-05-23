@@ -4,23 +4,31 @@ from typing import NewType
 from pydantic import BaseModel
 
 
-class Env(Enum):
+class Namespace(Enum):
     DEV = 'dev'
     PROD = 'prod'
 
 
-Envs = NewType('Env', Env)
+class RuntimeEnv(Enum):
+    DOCKER = 'docker'
+    TMUX = 'tmux'
+
+
+NamespaceType = NewType('Env', Namespace)
+RuntimeEnvType = NewType('Runtime', RuntimeEnv)
 
 
 class DeployModelInput(BaseModel):
     model: str
     version: str
-    env: Envs
+    namespace: NamespaceType
     port: int = 5000
     workers: int = 1
+    runtime_env: RuntimeEnvType = RuntimeEnv.TMUX
 
 
 class UndeployModelInput(BaseModel):
     model: str
     version: str
-    env: Envs
+    namespace: NamespaceType
+    runtime_env: RuntimeEnvType = RuntimeEnv.TMUX
