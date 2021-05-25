@@ -1,7 +1,10 @@
 import logging
+import os
 import socket
 
 from bentoml.yatai.client import get_yatai_client
+
+from app.utils import get_config
 
 
 class Deployment:
@@ -11,6 +14,8 @@ class Deployment:
         self.model = model
         self.version = version
         self.namespace = namespace.value
+        for k, v in get_config('yatai').items():
+            os.environ[k] = v
 
     def get_bentoml_model_by_version(self):
         yatai_client = get_yatai_client()
