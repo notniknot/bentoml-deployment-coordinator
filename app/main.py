@@ -8,7 +8,11 @@ from app.docker_deployment import DockerDeployment
 from app.models import DeployModelInput, RuntimeEnv, RuntimeEnvType, UndeployModelInput
 from app.tmux_deployment import TmuxDeployment
 
-app = FastAPI()
+app = FastAPI(
+    title='BentoML Deployment Coordinizer',
+    description='A webservice that provides endpoints to manage ML-model deployments via BentoML in tmux-sessions or Docker containers',
+    version='0.1',
+)
 
 security = HTTPBasic()
 

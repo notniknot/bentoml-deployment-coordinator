@@ -12,6 +12,7 @@ from libtmux.exc import LibTmuxException
 
 from app.base_deployment import Deployment
 from app.models import NamespaceType
+from app.utils import get_config
 
 
 class TmuxDeployment(Deployment):
@@ -36,9 +37,13 @@ class TmuxDeployment(Deployment):
                 status.HTTP_502_BAD_GATEWAY, detail=f'Port {port} is already in use.'
             )
         session = server.new_session(session_name=self.session_name)
+        for k, v in get_config('yatai').items():
+            session.set_environment(k, v)
+        for k, v in get_config('env_vars').items():
+            session.set_environment(k, v)
         session.set_environment('model_name', self.model)
         session.set_environment('model_version', self.version)
-        session.set_environment('model_env', self.namespace)
+        session.set_environment('model_namespace', self.namespace)
         session.set_environment('model_port', port)
         session.set_environment('model_workers', workers)
         pane = session.attached_pane
@@ -132,6 +137,7 @@ class TmuxDeployment(Deployment):
         bentoml_model_env = bentoml_model.env.to_dict()
         python_version = bentoml_model_env['python_version']
         pip_packages = bentoml_model_env['pip_packages']
+        pip_packages = list(set(pip_packages + ['psycopg2-binary', 'boto3']))
         config = {
             'name': self.env_name,
             'channels': ['defaults'],
