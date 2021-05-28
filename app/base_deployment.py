@@ -8,12 +8,11 @@ from app.utils import get_config
 
 
 class Deployment:
-    def __init__(self, model: str, version: str, namespace: str):
+    def __init__(self, model: str, version: str):
         self.logger = Deployment.init_logger()
-        self.logger.info(f'Initializing {type(self).__name__}: {model}:{version} ({namespace})')
+        self.logger.info(f'Initializing {type(self).__name__}: {model}:{version}')
         self.model = model
         self.version = version
-        self.namespace = namespace.value
         for k, v in get_config('yatai').items():
             os.environ[k] = v
 

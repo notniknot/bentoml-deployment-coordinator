@@ -11,7 +11,6 @@ from fastapi import HTTPException, status
 from libtmux.exc import LibTmuxException
 
 from app.base_deployment import Deployment
-from app.models import NamespaceType
 from app.utils import get_config
 
 
@@ -20,12 +19,13 @@ class TmuxDeployment(Deployment):
     BENTOML_FLASK_SERVING_STR = 'Serving Flask app'
     BENTOML_GUNICORN_SERVING_STR = 'Booting worker'
 
-    def __init__(self, model: str, version: str, namespace: NamespaceType):
-        super().__init__(model, version, namespace)
+    def __init__(self, model: str, version: str):
+        super().__init__(model, version)
         model_clean = re.sub(r'\W+', '', self.model)
-        self.env_name = f'{self.namespace}_{model_clean}'
+        version_clean = re.sub(r'\W+', '', self.version)
+        self.env_name = f'{model_clean}_{version_clean}'
         self.prefix = os.path.abspath(os.path.join('./envs', self.env_name))
-        self.session_name = f'bentoml_{self.namespace}_{model_clean}'
+        self.session_name = f'bentoml_{model_clean}_{version_clean}'
 
     def deploy_model(self, port: int, workers: int):
         server = libtmux.Server()
@@ -43,27 +43,27 @@ class TmuxDeployment(Deployment):
             session.set_environment(k, v)
         session.set_environment('model_name', self.model)
         session.set_environment('model_version', self.version)
-        session.set_environment('model_namespace', self.namespace)
         session.set_environment('model_port', port)
         session.set_environment('model_workers', workers)
         pane = session.attached_pane
         pane.send_keys(f'conda activate {self.prefix}')
-        if self.namespace == 'dev':
-            pane.send_keys(f'bentoml serve --port {port} {self.model}:{self.version}')
-        else:
-            pane.send_keys(
-                f'bentoml serve-gunicorn --port {port} --workers {workers} {self.model}:{self.version}'
-            )
-
+        pane.send_keys(
+            f'bentoml serve-gunicorn --port {port} --workers {workers} {self.model}:{self.version}'
+        )
         self._wait_for_capture(pane, 10)
         self.logger.info(f'Deployed model in session: {self.session_name}')
         return super().deploy_model()
 
     def undeploy_model(self):
         server = libtmux.Server()
-        self._kill_session_if_exists(server)
-        self._delete_env_if_exists()
-        self.logger.info(f'Undeployed model from session: {self.session_name}')
+        session_existed = self._kill_session_if_exists(server)
+        conda_env_existed = self._delete_env_if_exists()
+        if session_existed and conda_env_existed:
+            self.logger.info(f'Undeployed model from session: {self.session_name}')
+        else:
+            self.logger.info(
+                f'Model could not be undeployed (Session existed: {session_existed}, Conda env existed: {conda_env_existed})'
+            )
         return super().undeploy_model()
 
     @classmethod
@@ -82,7 +82,6 @@ class TmuxDeployment(Deployment):
                 {
                     'model': session.show_environment('model_name'),
                     'version': session.show_environment('model_version'),
-                    'namespace': session.show_environment('model_namespace'),
                     'port': session.show_environment('model_port'),
                     'workers': session.show_environment('model_workers'),
                 }
@@ -125,12 +124,18 @@ class TmuxDeployment(Deployment):
             session = server.find_where({"session_name": self.session_name})
             session.kill_session()
             self.logger.debug(f'Killed running session: {self.session_name}')
+            return True
+        self.logger.debug(f'No running session found: {self.session_name}')
+        return False
 
     def _delete_env_if_exists(self):
         envs = run_command(Commands.INFO, '--envs')
         if self.prefix in envs[0]:
             run_command(Commands.REMOVE, '--all', '--prefix', self.prefix)
             self.logger.debug(f'Removed conda env: {self.prefix}')
+            return True
+        self.logger.debug(f'Conda env not found: {self.prefix}')
+        return False
 
     def _create_env_from_model(self):
         bentoml_model = self.get_bentoml_model_by_version()
