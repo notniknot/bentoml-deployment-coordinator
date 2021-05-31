@@ -68,10 +68,12 @@ class TmuxDeployment(Deployment):
 
     @classmethod
     def get_running_models(self):
+        logger = self.init_logger()
         server = libtmux.Server()
         try:
             sessions = server.list_sessions()
         except LibTmuxException:
+            logger.info('No running tmux-Sessions found.')
             return list()
         sessions_fmt = []
         for session in sessions:
@@ -86,7 +88,6 @@ class TmuxDeployment(Deployment):
                     'workers': session.show_environment('model_workers'),
                 }
             )
-        logger = Deployment.init_logger()
         logger.debug(f'Running model sessions: {str(sessions_fmt)}')
         return sessions_fmt
 
@@ -122,6 +123,7 @@ class TmuxDeployment(Deployment):
     def _kill_session_if_exists(self, server):
         if server.has_session(self.session_name):
             session = server.find_where({"session_name": self.session_name})
+            session.attached_pane.send_keys('C-c', enter=False, suppress_history=False)
             session.kill_session()
             self.logger.debug(f'Killed running session: {self.session_name}')
             return True

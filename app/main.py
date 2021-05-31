@@ -11,7 +11,7 @@ from app.tmux_deployment import TmuxDeployment
 
 app = FastAPI(
     title='BentoML Deployment Coordinizer',
-    description='A webservice that provides endpoints to manage ML-model deployments via BentoML in tmux-sessions or Docker containers',
+    description='A webservice that provides endpoints to manage ML-Model-Deployments via BentoML in tmux-sessions or Docker containers',
     version='1.0',
 )
 

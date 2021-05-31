@@ -1,6 +1,7 @@
 import logging
 import os
 import socket
+import sys
 
 from bentoml.yatai.client import get_yatai_client
 
@@ -9,7 +10,7 @@ from app.utils import get_config
 
 class Deployment:
     def __init__(self, model: str, version: str):
-        self.logger = Deployment.init_logger()
+        self.logger = self.init_logger()
         self.logger.info(f'Initializing {type(self).__name__}: {model}:{version}')
         self.model = model
         self.version = version
