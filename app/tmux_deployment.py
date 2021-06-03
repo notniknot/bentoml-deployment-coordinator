@@ -21,8 +21,8 @@ class TmuxDeployment(Deployment):
 
     def __init__(self, model: str, version: str):
         super().__init__(model, version)
-        model_clean = re.sub(r'\W+', '', self.model)
-        version_clean = re.sub(r'\W+', '', self.version)
+        model_clean = re.sub(r'\W+', '', self.model).lower()
+        version_clean = re.sub(r'\W+', '', self.version).lower()
         self.env_name = f'{model_clean}_{version_clean}'
         self.prefix = os.path.abspath(os.path.join('./envs', self.env_name))
         self.session_name = f'bentoml_{model_clean}_{version_clean}'
