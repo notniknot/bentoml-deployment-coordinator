@@ -9,7 +9,8 @@ from app.utils import get_config
 
 class Deployment:
     def __init__(self, model: str, version: str):
-        self.logger = Deployment.init_logger()
+        os.environ['BENTOML_DO_NOT_TRACK'] = 'True'
+        self.logger = self.init_logger()
         self.logger.info(f'Initializing {type(self).__name__}: {model}:{version}')
         self.model = model
         self.version = version
@@ -29,6 +30,9 @@ class Deployment:
     @classmethod
     def init_logger(self):
         logging.basicConfig(format='[%(asctime)s] %(levelname)s  %(name)s: %(message)s')
+        sql = logging.getLogger('sqlalchemy')
+        sql.setLevel(logging.ERROR)
+        sql.disabled = True
         logger = logging.getLogger(__name__)
         logger.setLevel(logging.DEBUG)
         return logger
