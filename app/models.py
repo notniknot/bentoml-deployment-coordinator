@@ -9,12 +9,19 @@ class RuntimeEnv(Enum):
     TMUX = 'tmux'
 
 
+class Stage(Enum):
+    STAGING = 'staging'
+    PRODUCTION = 'production'
+
+
 RuntimeEnvType = NewType('Runtime', RuntimeEnv)
+StageType = NewType('Stage', Stage)
 
 
 class DeployModelInput(BaseModel):
     model: str
     version: str
+    stage: StageType = Stage.PRODUCTION
     port: int = 5000
     workers: int = 1
     runtime_env: RuntimeEnvType = RuntimeEnv.TMUX
@@ -22,5 +29,5 @@ class DeployModelInput(BaseModel):
 
 class UndeployModelInput(BaseModel):
     model: str
-    version: str
+    stage: StageType = Stage.PRODUCTION
     runtime_env: RuntimeEnvType = RuntimeEnv.TMUX

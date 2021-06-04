@@ -51,7 +51,9 @@ async def get_docs():
 )
 async def start(model_content: DeployModelInput):
     runtime_env = get_runtime_env(model_content.runtime_env)
-    runtime_env_instance = runtime_env(model_content.model, model_content.version)
+    runtime_env_instance = runtime_env(
+        model=model_content.model, stage=model_content.stage, version=model_content.version
+    )
     response = runtime_env_instance.deploy_model(
         port=model_content.port, workers=model_content.workers
     )
@@ -66,7 +68,7 @@ async def start(model_content: DeployModelInput):
 )
 async def stop(model_content: UndeployModelInput):
     runtime_env = get_runtime_env(model_content.runtime_env)
-    runtime_env_instance = runtime_env(model_content.model, model_content.version)
+    runtime_env_instance = runtime_env(model=model_content.model, stage=model_content.stage)
     response = runtime_env_instance.undeploy_model()
     return Response(status_code=status.HTTP_200_OK, content=response)
 
