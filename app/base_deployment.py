@@ -3,14 +3,13 @@ import os
 import socket
 import time
 
-from bentoml.yatai.client import get_yatai_client
-
-from app.utils import get_config
-from app.models import StageType
 import requests
-from urllib3.util.retry import Retry
+from bentoml.yatai.client import get_yatai_client
 from requests.adapters import HTTPAdapter
-import sys
+from urllib3.util.retry import Retry
+
+from app.models import StageType
+from app.utils import get_config
 
 
 class Deployment:
@@ -25,13 +24,6 @@ class Deployment:
             os.environ[k] = v
 
     def get_bentoml_model_by_version(self):
-        # Suppress sqlalchemy echo
-        sqlalchemy = logging.getLogger('sqlalchemy.engine.base.Engine')
-        sh = logging.StreamHandler()
-        sh.setLevel(logging.WARNING)
-        sqlalchemy.handlers = [sh]
-        sqlalchemy.propagate = False
-
         yatai_client = get_yatai_client()
         return yatai_client.repository.load(f'{self.model}:{self.version}')
 
@@ -51,7 +43,13 @@ class Deployment:
             handlers=[root_handler],
             force=True,
         )
-        logging.getLogger('sqlalchemy').setLevel(logging.WARNING)
+        # Suppress sqlalchemy echo
+        sqlalchemy = logging.getLogger('sqlalchemy.engine.base.Engine')
+        sh = logging.StreamHandler()
+        sh.setLevel(logging.WARNING)
+        sqlalchemy.handlers = [sh]
+        sqlalchemy.propagate = False
+
         logger = logging.getLogger('coordinator')
         logger.setLevel(logging.DEBUG)
         return logger

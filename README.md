@@ -41,4 +41,4 @@ This repo is for engineers/data scientists who encountered the same problems whe
 
 
 # ToDos
-- Currently none
+- Logic to check if tmux/docker is installed

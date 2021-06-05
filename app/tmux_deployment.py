@@ -82,14 +82,11 @@ class TmuxDeployment(Deployment):
             name = session.get('session_name')
             if not name.startswith('bentoml_'):
                 continue
+            labels = ['name', 'version', 'stage', 'port', 'workers']
+            if not all(session.show_environment(f'model_{label}') for label in labels):
+                continue
             sessions_fmt.append(
-                {
-                    'model': session.show_environment('model_name'),
-                    'version': session.show_environment('model_version'),
-                    'stage': session.show_environment('model_stage'),
-                    'port': session.show_environment('model_port'),
-                    'workers': session.show_environment('model_workers'),
-                }
+                {label: session.show_environment(f'model_{label}') for label in labels}
             )
         logger.debug(f'Running model sessions: {str(sessions_fmt)}')
         return sessions_fmt
