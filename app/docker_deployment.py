@@ -11,30 +11,35 @@ from docker import DockerClient
 from fastapi import HTTPException, status
 
 from app.base_deployment import Deployment
-from app.models import StageType
+from app.models import Stage, StageType
 
 
 class DockerDeployment(Deployment):
-    def __init__(self, model: str, stage: StageType, version: str = ''):
+    def __init__(self, model: str, version: str = '', stage: StageType = Stage.NONE):
         super().__init__(model=model, stage=stage, version=version)
         model_clean = re.sub(r'\W+', '', self.model).lower()
         stage_clean = re.sub(r'\W+', '', self.stage).lower()
         random_string = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
-        self.image_name = f'bentoml_{model_clean}_{stage_clean}:{random_string}'
+        self.image_name = f'bentoml_{model_clean}_{stage_clean}:{random_string}'  # ToDo: Version???
         self.image_name_general = f'bentoml_{model_clean}_{stage_clean}'
-        self.container_name = f'bentoml_{model_clean}_{stage_clean}_{random_string}'
+        self.container_name = (
+            f'bentoml_{model_clean}_{stage_clean}_{random_string}'  # ToDo: Random String necessary?
+        )
         self.container_name_general = f'bentoml_{model_clean}_{stage_clean}'
 
     def deploy_model(self, port: int, workers: int):
         docker_client = docker.from_env()
+        # ToDo: Return List with stopped containers
         self._stop_model_server(docker_client, remove_container=False)
         if self._is_port_in_use(port, 4):
             self.logger.error(f'Port {port} is already in use. Cleaning up...')
+            # ToDo: Give list
             self._start_model_server(docker_client, None, None, existing_container=True)
             raise HTTPException(
                 status.HTTP_502_BAD_GATEWAY, detail=f'Port {port} is already in use.'
             )
         self._start_model_server(docker_client, port, workers)
+        # ToDo: Give list ???
         self._stop_model_server(
             docker_client,
             remove_container=True,
@@ -62,6 +67,7 @@ class DockerDeployment(Deployment):
                 self.logger.debug('Old exited containers could not be found.')
                 return False
 
+        # ToDo Call
         yatai_client = get_yatai_client()
         bento_pb = yatai_client.yatai_service.bento_metadata_store.get(self.model, self.version)
         if not bento_pb:
@@ -123,6 +129,12 @@ class DockerDeployment(Deployment):
         containers = docker_client.containers.list(
             all=True, filters={'name': self.image_name_general}
         )
+        # docker_client.containers.list(
+        #     all=True, filters={'label': ['name=IrisClassifier', 'version=20210603092404_36AE78']}
+        # )
+        # docker_client.containers.list(
+        #     all=True, filters={'label': ['name=IrisClassifier', 'stage=staging']}
+        # )
         for container in containers:
             if container.name == exclude:
                 continue
