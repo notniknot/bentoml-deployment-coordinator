@@ -12,7 +12,7 @@ from fastapi import HTTPException, status
 from libtmux.exc import LibTmuxException
 
 from app.base_deployment import Deployment
-from app.models import StageType
+from app.models import Stage, StageType
 from app.utils import get_config
 
 
@@ -21,8 +21,8 @@ class TmuxDeployment(Deployment):
     BENTOML_FLASK_SERVING_STR = 'Serving Flask app'
     BENTOML_GUNICORN_SERVING_STR = 'Booting worker'
 
-    def __init__(self, model: str, stage: StageType, version: str = ''):
-        super().__init__(model=model, stage=stage, version=version)
+    def __init__(self, model: str, version: str, stage: StageType = Stage.NONE):
+        super().__init__(model=model, version=version, stage=stage)
         model_clean = re.sub(r'\W+', '', self.model).lower()
         stage_clean = re.sub(r'\W+', '', self.stage).lower()
         random_string = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
@@ -32,11 +32,12 @@ class TmuxDeployment(Deployment):
         self.prefix_general = os.path.abspath(os.path.join('./envs', self.env_name_general))
         self.session_name = f'bentoml_{model_clean}_{stage_clean}_{random_string}'
         self.session_name_general = f'bentoml_{model_clean}_{stage_clean}'
+        # self.session_name_general = f'bentoml_{model_clean}'
 
     def deploy_model(self, port: int, workers: int):
         server = libtmux.Server()
         self._create_env_from_model()
-        self._stop_model_server(server, kill_session=False)
+        self._stop_model_server(find_by=['version'], kill_session=False)
         if self._is_port_in_use(port, 4):
             self.logger.error(f'Port {port} is already in use. Cleaning up...')
             self._delete_env_if_exists(specific_prefix=self.prefix)
@@ -46,30 +47,42 @@ class TmuxDeployment(Deployment):
             )
         try:
             self._start_model_server(server, workers, port)
-            self._stop_model_server(server, kill_session=True, exclude=self.session_name)
-            self._delete_env_if_exists(exclude=self.prefix)
+            stopped_sessions = self._stop_model_server(
+                find_by=['stage', 'version'], kill_session=True, exclude=self.session_name
+            )
+            for session in stopped_sessions:
+                self._delete_env_if_exists(
+                    exclude=self.prefix, specific_prefix=session['used_conda_prefix']
+                )
             self.logger.info(f'Deployed model in session: {self.session_name}')
         except HTTPException as ex:
             self.logger.info('Model could not be deployed. Starting old model server if existing.')
             self._start_model_server(server, workers, port, existing_session=True)
             raise ex
-
         return super().deploy_model()
 
     def undeploy_model(self):
-        server = libtmux.Server()
-        session_existed = self._stop_model_server(server, kill_session=True)
-        conda_env_existed = self._delete_env_if_exists()
-        if session_existed and conda_env_existed:
-            self.logger.info(f'Undeployed model from session: {self.session_name}')
+        stopped_sessions = self._stop_model_server(find_by=['version'], kill_session=True)
+        for stopped_session in stopped_sessions:
+            self._delete_env_if_exists(specific_prefix=stopped_session['used_conda_prefix'])
+        if len(stopped_sessions) > 0:
+            self.logger.info(f'Undeployed model from session: {self.model}, {self.version}')
         else:
-            self.logger.info(
-                f'Model could not be undeployed (Session existed: {session_existed}, Conda env existed: {conda_env_existed})'
+            self.logger.info(f'Model could not be undeployed: {self.model}, {self.version}')
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f'Model could not be undeployed: {self.model}, {self.version}',
             )
         return super().undeploy_model()
 
     @classmethod
-    def get_running_models(self):
+    def get_running_models(
+        self,
+        name: str = None,
+        version: str = None,
+        session_name_start: str = None,
+        return_only_sessions: bool = False,
+    ):
         logger = self.init_logger()
         server = libtmux.Server()
         try:
@@ -79,16 +92,26 @@ class TmuxDeployment(Deployment):
             return list()
         sessions_fmt = []
         for session in sessions:
-            name = session.get('session_name')
-            if not name.startswith('bentoml_'):
+            session_name = session.get('session_name')
+            if not session_name.startswith('bentoml_'):
+                continue
+            if session_name_start is not None and not session_name.startswith(session_name_start):
+                continue
+            if name is not None and session.show_environment('model_name') != name:
+                continue
+            if version is not None and session.show_environment('model_version') != version:
                 continue
             labels = ['name', 'version', 'stage', 'port', 'workers']
             if not all(session.show_environment(f'model_{label}') for label in labels):
                 continue
-            sessions_fmt.append(
-                {label: session.show_environment(f'model_{label}') for label in labels}
-            )
-        logger.debug(f'Running model sessions: {str(sessions_fmt)}')
+            if return_only_sessions is True:
+                sessions_fmt.append(session)
+            else:
+                sessions_fmt.append(
+                    {label: session.show_environment(f'model_{label}') for label in labels}
+                )
+        if return_only_sessions is False:
+            logger.debug(f'Running model sessions: {str(sessions_fmt)}')
         return sessions_fmt
 
     def _start_model_server(
@@ -96,14 +119,9 @@ class TmuxDeployment(Deployment):
     ):
         self.logger.debug(f'Starting model server, existing_session={existing_session}.')
         if existing_session:
-            try:
-                sessions = server.list_sessions()
-            except LibTmuxException:
-                self.logger.debug('No Sessions running.')
-                if raise_error:
-                    raise LibTmuxException('No Sessions running.')
-                return False
-            sessions = [s for s in sessions if s.name.startswith(self.session_name_general)]
+            sessions = self.get_running_models(
+                session_name_start=self.session_name_general, return_only_sessions=True
+            )
             if len(sessions) == 0:
                 self.logger.debug('Old Session could not be found.')
                 if raise_error:
@@ -121,6 +139,7 @@ class TmuxDeployment(Deployment):
             session.set_environment('model_stage', self.stage)
             session.set_environment('model_port', port)
             session.set_environment('model_workers', workers)
+            session.set_environment('model_conda_prefix', self.prefix)
         pane = session.attached_pane
         pane.send_keys(f'conda activate {self.prefix}')
         used_model = session.show_environment('model_name')
@@ -143,28 +162,42 @@ class TmuxDeployment(Deployment):
             return False
         self.logger.debug(f'Started model server, existing_session={existing_session}.')
 
-    def _stop_model_server(self, server, kill_session: bool, exclude: str = ''):
+    def _stop_model_server(self, find_by: list, kill_session: bool, exclude: str = ''):
         self.logger.debug(f'Stopping possible running model server, kill_session={kill_session}.')
-        try:
-            sessions = server.list_sessions()
-        except LibTmuxException:
-            return
-        sessions = [
-            s
-            for s in sessions
-            if s.name.startswith(self.session_name_general) and s.name != exclude
-        ]
+
+        sessions = []
+        if 'version' in find_by:
+            sessions += self.get_running_models(
+                name=self.model, version=self.version, return_only_sessions=True
+            )
+        if 'stage' in find_by:
+            sessions += self.get_running_models(
+                session_name_start=self.session_name_general, return_only_sessions=True
+            )
+
+        stopped_sessions = []
         for session in sessions:
+            if session.name == exclude:
+                continue
+            if session._info is None:
+                continue
             session.attached_pane.send_keys('C-c', enter=False, suppress_history=False)
+            stopped_sessions.append(
+                {
+                    'used_model': session.show_environment('model_name'),
+                    'used_version': session.show_environment('model_version'),
+                    'used_port': session.show_environment('model_port'),
+                    'used_workers': session.show_environment('model_workers'),
+                    'used_conda_prefix': session.show_environment('model_conda_prefix'),
+                }
+            )
             self.logger.debug(f'Stopped model server: {session.name}')
             if kill_session:
                 self.logger.debug(f'Killing (old) session: {session.name}')
                 session.kill_session()
-        if len(sessions) == 0:
-            self.logger.debug(f'No running sessions found: {self.session_name_general}')
-            return False
-        else:
-            return True
+        if len(stopped_sessions) == 0:
+            self.logger.debug(f'No running sessions stopped.')
+        return stopped_sessions
 
     def _delete_env_if_exists(self, exclude: str = '', specific_prefix: str = None):
         self.logger.error(f'Deleting conda environments: {self.prefix_general}')
@@ -190,9 +223,9 @@ class TmuxDeployment(Deployment):
     def _create_env_from_model(self):
         self.logger.debug(f'Creating new conda environment: {self.prefix}')
         bentoml_model = self.get_bentoml_model_by_version()
-        bentoml_model_env = bentoml_model.env.to_dict()
-        python_version = bentoml_model_env['python_version']
-        pip_packages = bentoml_model_env['pip_packages']
+        bentoml_model_env = bentoml_model.bento_service_metadata.env
+        python_version = bentoml_model_env.python_version
+        pip_packages = list(bentoml_model_env.pip_packages)
         pip_packages = list(set(pip_packages + ['psycopg2-binary', 'boto3']))
         config = {
             'name': self.env_name,

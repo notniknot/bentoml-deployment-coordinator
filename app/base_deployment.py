@@ -13,7 +13,12 @@ from app.utils import get_config
 
 
 class Deployment:
-    def __init__(self, model: str, stage: StageType, version: str = ''):
+    def __init__(
+        self,
+        model: str,
+        version: str,
+        stage: StageType,
+    ):
         os.environ['BENTOML_DO_NOT_TRACK'] = 'True'
         self.logger = self.init_logger()
         self.logger.info(f'Initializing {type(self).__name__}: {model}:{version}')
@@ -25,7 +30,7 @@ class Deployment:
 
     def get_bentoml_model_by_version(self):
         yatai_client = get_yatai_client()
-        return yatai_client.repository.load(f'{self.model}:{self.version}')
+        return yatai_client.yatai_service.bento_metadata_store.get(self.model, self.version)
 
     def deploy_model(self):
         return 'Successfully deployed model'
@@ -65,7 +70,7 @@ class Deployment:
         retries = Retry(total=retries, backoff_factor=0.1, status_forcelist=[500, 502, 503, 504])
         session.mount('http://', HTTPAdapter(max_retries=retries))
         try:
-            response = session.get(f'http://127.0.0.1:{port}/healthz', timeout=1)
+            response = session.get(f'http://localhost:{port}/healthz', timeout=1)
             if response.status_code == 200:
                 self.logger.debug('Service up and running.')
                 return True
