@@ -10,8 +10,10 @@ class RuntimeEnv(Enum):
 
 
 class Stage(Enum):
+    NONE = 'none'
     STAGING = 'staging'
     PRODUCTION = 'production'
+    ARCHIVED = 'archived'
 
 
 RuntimeEnvType = NewType('Runtime', RuntimeEnv)
@@ -22,6 +24,7 @@ class DeployModelInput(BaseModel):
     model: str
     version: str
     stage: StageType = Stage.PRODUCTION
+    old_stage: StageType = Stage.NONE
     port: int = 5000
     workers: int = 1
     runtime_env: RuntimeEnvType = RuntimeEnv.TMUX
@@ -29,5 +32,6 @@ class DeployModelInput(BaseModel):
 
 class UndeployModelInput(BaseModel):
     model: str
-    stage: StageType = Stage.PRODUCTION
+    version: str
+    old_stage: StageType = Stage.PRODUCTION
     runtime_env: RuntimeEnvType = RuntimeEnv.TMUX
