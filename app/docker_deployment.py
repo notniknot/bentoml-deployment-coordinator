@@ -61,12 +61,13 @@ class DockerDeployment(Deployment):
         if isinstance(existing_containers, list):
             for existing_container in existing_containers:
                 existing_container.start()
+                # ? Healthy?
                 self.logger.debug(f'Restarted exited container: {existing_container.name}')
             if len(existing_containers) == 0:
+                # ? raise error?
                 self.logger.debug('Old exited containers could not be found.')
             return
 
-        # ToDo Call (<- source out to base?)
         yatai_client = get_yatai_client()
         bento_pb = yatai_client.yatai_service.bento_metadata_store.get(self.model, self.version)
         if not bento_pb:

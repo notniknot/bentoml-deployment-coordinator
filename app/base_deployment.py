@@ -40,21 +40,7 @@ class Deployment:
 
     @classmethod
     def init_logger(self):
-        root_handler = logging.StreamHandler()
-        root_handler.setLevel(logging.DEBUG)
-        logging.basicConfig(
-            format='[%(asctime)s] %(levelname)s  %(name)s: %(message)s',
-            level=logging.WARNING,
-            handlers=[root_handler],
-            force=True,
-        )
-        # Suppress sqlalchemy echo
-        sqlalchemy = logging.getLogger('sqlalchemy.engine.base.Engine')
-        sh = logging.StreamHandler()
-        sh.setLevel(logging.WARNING)
-        sqlalchemy.handlers = [sh]
-        sqlalchemy.propagate = False
-
+        logging.basicConfig(format='[%(asctime)s] %(levelname)s  %(name)s: %(message)s')
         logger = logging.getLogger('coordinator')
         logger.setLevel(logging.DEBUG)
         return logger

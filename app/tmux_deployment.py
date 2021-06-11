@@ -7,6 +7,7 @@ import tempfile
 
 import libtmux
 import yaml
+from bentoml.exceptions import YataiRepositoryException
 from conda.cli.python_api import Commands, run_command
 from fastapi import HTTPException, status
 from libtmux.exc import LibTmuxException
@@ -37,17 +38,16 @@ class TmuxDeployment(Deployment):
     def deploy_model(self, port: int, workers: int):
         server = libtmux.Server()
         self._create_env_from_model()
-        self._stop_model_server(find_by=['version'], kill_session=False)
+        stopped_sessions = self._stop_model_server(find_by=['version'], kill_session=False)
         if self._is_port_in_use(port, 4):
             self.logger.error(f'Port {port} is already in use. Cleaning up...')
             self._delete_env_if_exists(specific_prefix=self.prefix)
-            # ? insert stop list?
-            self._start_model_server(server, None, None, existing_session=True, raise_error=False)
+            self._start_model_server(server, existing_sessions=stopped_sessions, raise_error=False)
             raise HTTPException(
                 status.HTTP_502_BAD_GATEWAY, detail=f'Port {port} is already in use.'
             )
         try:
-            self._start_model_server(server, workers, port)
+            self._start_model_server(server, workers=workers, port=port)
             stopped_sessions = self._stop_model_server(
                 find_by=['stage', 'version'], kill_session=True, exclude=self.session_name
             )
@@ -115,32 +115,7 @@ class TmuxDeployment(Deployment):
             logger.debug(f'Running model sessions: {str(sessions_fmt)}')
         return sessions_fmt
 
-    def _start_model_server(
-        self, server, workers, port, existing_session: bool = False, raise_error: bool = True
-    ):
-        self.logger.debug(f'Starting model server, existing_session={existing_session}.')
-        if existing_session:
-            sessions = self.get_running_models(
-                session_name_start=self.session_name_general, return_only_sessions=True
-            )
-            if len(sessions) == 0:
-                self.logger.debug('Old Session could not be found.')
-                if raise_error:
-                    raise LibTmuxException('Old Session could not be found.')
-                return False
-            session = sessions[0]
-        else:
-            session = server.new_session(session_name=self.session_name)
-            for k, v in get_config('yatai').items():
-                session.set_environment(k, v)
-            for k, v in get_config('env_vars').items():
-                session.set_environment(k, v)
-            session.set_environment('model_name', self.model)
-            session.set_environment('model_version', self.version)
-            session.set_environment('model_stage', self.stage)
-            session.set_environment('model_port', port)
-            session.set_environment('model_workers', workers)
-            session.set_environment('model_conda_prefix', self.prefix)
+    def _launch_gunicorn_in_session(self, session, raise_error):
         pane = session.attached_pane
         pane.send_keys(f'conda activate {self.prefix}')
         used_model = session.show_environment('model_name')
@@ -161,7 +136,40 @@ class TmuxDeployment(Deployment):
                     detail=f'Could not deploy service.\n{detail}',
                 )
             return False
-        self.logger.debug(f'Started model server, existing_session={existing_session}.')
+
+    def _start_model_server(
+        self,
+        server,
+        existing_sessions: list = False,
+        port: int = None,
+        workers: int = None,
+        raise_error: bool = True,
+    ):
+        self.logger.debug(f'Starting model server, existing_session={existing_sessions}.')
+
+        if isinstance(existing_sessions, list):
+            for existing_session in existing_sessions:
+                self._launch_gunicorn_in_session(existing_session, raise_error)
+                self.logger.debug(f'Restarted stopped Session: {existing_session.name}')
+            if len(existing_sessions) == 0:
+                self.logger.debug('Old Sessions could not be found.')
+                if raise_error:
+                    raise LibTmuxException('Old Sessions could not be found.')
+            return
+
+        session = server.new_session(session_name=self.session_name)
+        for k, v in get_config('yatai').items():
+            session.set_environment(k, v)
+        for k, v in get_config('env_vars').items():
+            session.set_environment(k, v)
+        session.set_environment('model_name', self.model)
+        session.set_environment('model_version', self.version)
+        session.set_environment('model_stage', self.stage)
+        session.set_environment('model_port', port)
+        session.set_environment('model_workers', workers)
+        session.set_environment('model_conda_prefix', self.prefix)
+        self._launch_gunicorn_in_session(session, raise_error)
+        self.logger.debug(f'Started model server: {session.name}.')
 
     def _stop_model_server(self, find_by: list, kill_session: bool, exclude: str = ''):
         self.logger.debug(f'Stopping possible running model server, kill_session={kill_session}.')
@@ -222,6 +230,10 @@ class TmuxDeployment(Deployment):
     def _create_env_from_model(self):
         self.logger.debug(f'Creating new conda environment: {self.prefix}')
         bentoml_model = self.get_bentoml_model_by_version()
+        if not bentoml_model:
+            raise YataiRepositoryException(
+                f'BentoService {self.model}:{self.version} does not exist'
+            )
         bentoml_model_env = bentoml_model.bento_service_metadata.env
         python_version = bentoml_model_env.python_version
         pip_packages = list(bentoml_model_env.pip_packages)
