@@ -10,10 +10,10 @@ class RuntimeEnv(Enum):
 
 
 class Stage(Enum):
-    NONE = 'none'
-    STAGING = 'staging'
-    PRODUCTION = 'production'
-    ARCHIVED = 'archived'
+    NONE = 'None'
+    STAGING = 'Staging'
+    PRODUCTION = 'Production'
+    ARCHIVED = 'Archived'
 
 
 RuntimeEnvType = NewType('Runtime', RuntimeEnv)

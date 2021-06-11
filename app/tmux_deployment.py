@@ -196,7 +196,7 @@ class TmuxDeployment(Deployment):
                 self.logger.debug(f'Killing (old) session: {session.name}')
                 session.kill_session()
         if len(stopped_sessions) == 0:
-            self.logger.debug(f'No running sessions stopped.')
+            self.logger.debug('No running sessions stopped.')
         return stopped_sessions
 
     def _delete_env_if_exists(self, exclude: str = '', specific_prefix: str = None):
