@@ -13,7 +13,7 @@ from libtmux.exc import LibTmuxException
 
 from app.base_deployment import Deployment
 from app.models import Stage, StageType
-from app.utils import get_config
+from app.utils import distinct, get_config
 
 
 class TmuxDeployment(Deployment):
@@ -41,6 +41,7 @@ class TmuxDeployment(Deployment):
         if self._is_port_in_use(port, 4):
             self.logger.error(f'Port {port} is already in use. Cleaning up...')
             self._delete_env_if_exists(specific_prefix=self.prefix)
+            # ? insert stop list?
             self._start_model_server(server, None, None, existing_session=True, raise_error=False)
             raise HTTPException(
                 status.HTTP_502_BAD_GATEWAY, detail=f'Port {port} is already in use.'
@@ -176,10 +177,8 @@ class TmuxDeployment(Deployment):
             )
 
         stopped_sessions = []
-        for session in sessions:
+        for session in distinct(sessions, 'name'):
             if session.name == exclude:
-                continue
-            if session._info is None:
                 continue
             session.attached_pane.send_keys('C-c', enter=False, suppress_history=False)
             stopped_sessions.append(

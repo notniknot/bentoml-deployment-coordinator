@@ -14,3 +14,14 @@ def get_config(key: str) -> dict:
         return config[key] or dict()
     else:
         return dict()
+
+
+def distinct(obj_list: list, attr: str):
+    distinct_obj_list = []
+    for obj in obj_list:
+        for distinct_obj in distinct_obj_list:
+            if getattr(obj, attr) == getattr(distinct_obj, attr):
+                break
+        else:
+            distinct_obj_list.append(obj)
+    return distinct_obj_list

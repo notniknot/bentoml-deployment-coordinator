@@ -12,6 +12,7 @@ from fastapi import HTTPException, status
 
 from app.base_deployment import Deployment
 from app.models import Stage, StageType
+from app.utils import distinct
 
 
 class DockerDeployment(Deployment):
@@ -29,16 +30,14 @@ class DockerDeployment(Deployment):
 
     def deploy_model(self, port: int, workers: int):
         docker_client = docker.from_env()
-        # ToDo: Return List with stopped containers
-        self._stop_model_server(docker_client, remove_container=False)
+        stopped_containers = self._stop_model_server(docker_client, remove_container=False)
         if self._is_port_in_use(port, 4):
             self.logger.error(f'Port {port} is already in use. Cleaning up...')
-            # ToDo: Give list
-            self._start_model_server(docker_client, None, None, existing_container=True)
+            self._start_model_server(docker_client, existing_containers=stopped_containers)
             raise HTTPException(
                 status.HTTP_502_BAD_GATEWAY, detail=f'Port {port} is already in use.'
             )
-        self._start_model_server(docker_client, port, workers)
+        self._start_model_server(docker_client, port=port, workers=workers)
         # ToDo: Give list ???
         self._stop_model_server(
             docker_client,
@@ -53,21 +52,21 @@ class DockerDeployment(Deployment):
         return super().undeploy_model()
 
     def _start_model_server(
-        self, docker_client: DockerClient, port: int, workers: int, existing_container: bool = False
+        self,
+        docker_client: DockerClient,
+        existing_containers: list = None,
+        port: int = None,
+        workers: int = None,
     ):
-        if existing_container:
-            containers = docker_client.containers.list(
-                all=True, filters={'name': self.container_name_general}
-            )
-            if len(containers) > 0 and containers[0].status == 'exited':
-                containers[0].start()
-                self.logger.debug(f'Restarted exited container: {containers[0].name}')
-                return True
-            else:
+        if isinstance(existing_containers, list):
+            for existing_container in existing_containers:
+                existing_container.start()
+                self.logger.debug(f'Restarted exited container: {existing_container.name}')
+            if len(existing_containers) == 0:
                 self.logger.debug('Old exited containers could not be found.')
-                return False
+            return
 
-        # ToDo Call
+        # ToDo Call (<- source out to base?)
         yatai_client = get_yatai_client()
         bento_pb = yatai_client.yatai_service.bento_metadata_store.get(self.model, self.version)
         if not bento_pb:
@@ -82,6 +81,7 @@ class DockerDeployment(Deployment):
             )
             safe_retrieve(bento_service_bundle_path, temp_bundle_path)
             try:
+                # ? Clean image name and container name?
                 docker_client.images.build(path=temp_bundle_path, tag=self.image_name, rm=True)
                 self.logger.debug(f'Built image {self.image_name}.')
                 docker_client.containers.run(
@@ -126,20 +126,22 @@ class DockerDeployment(Deployment):
         self.logger.debug(
             f'Stopping possible running model server, remove_container={remove_container}.'
         )
-        containers = docker_client.containers.list(
-            all=True, filters={'name': self.image_name_general}
+
+        containers = []
+        containers += docker_client.containers.list(
+            all=True, filters={'label': [f'name={self.model}', f'version={self.version}']}
         )
-        # docker_client.containers.list(
-        #     all=True, filters={'label': ['name=IrisClassifier', 'version=20210603092404_36AE78']}
-        # )
-        # docker_client.containers.list(
-        #     all=True, filters={'label': ['name=IrisClassifier', 'stage=staging']}
-        # )
-        for container in containers:
+        containers += docker_client.containers.list(
+            all=True, filters={'label': [f'name={self.model}', f'stage={self.stage}']}
+        )
+
+        stopped_containers = []
+        for container in distinct(containers, 'id'):
             if container.name == exclude:
                 continue
             if container.status == 'running':
                 container.stop(timeout=10)
+                stopped_containers.append(container)
                 self.logger.debug(f'Stopped container: {container.name}')
             if remove_container:
                 self.logger.debug(f'Removing container: {container.name}')
@@ -148,9 +150,7 @@ class DockerDeployment(Deployment):
                 docker_client.images.remove(image=container.attrs['Config']['Image'])
         if len(containers) == 0:
             self.logger.debug(f'No running containers found: {self.container_name_general}')
-            return False
-        else:
-            return True
+        return stopped_containers
 
     @classmethod
     def get_running_models(self):
