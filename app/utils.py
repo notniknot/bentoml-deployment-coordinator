@@ -1,4 +1,5 @@
 import os
+from typing import Any, List
 
 import yaml
 
@@ -16,7 +17,7 @@ def get_config(key: str) -> dict:
         return dict()
 
 
-def distinct(obj_list: list, attr: str):
+def distinct(obj_list: List[Any], attr: str) -> List[Any]:
     distinct_obj_list = []
     for obj in obj_list:
         for distinct_obj in distinct_obj_list:

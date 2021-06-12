@@ -4,10 +4,10 @@ import re
 import string
 import subprocess
 import tempfile
+from typing import List, Literal
 
 import libtmux
 import yaml
-from bentoml.exceptions import YataiRepositoryException
 from conda.cli.python_api import Commands, run_command
 from fastapi import HTTPException, status
 from libtmux.exc import LibTmuxException
@@ -33,11 +33,11 @@ class TmuxDeployment(Deployment):
         self.prefix_general = os.path.abspath(os.path.join('./envs', self.env_name_general))
         self.session_name = f'bentoml_{model_clean}_{stage_clean}_{random_string}'
         self.session_name_general = f'bentoml_{model_clean}_{stage_clean}'
-        # self.session_name_general = f'bentoml_{model_clean}'
 
     def deploy_model(self, port: int, workers: int):
         server = libtmux.Server()
         self._create_env_from_model()
+        # ? Nicht nur Version, sondern auch Stage???
         stopped_sessions = self._stop_model_server(find_by=['version'], kill_session=False)
         if self._is_port_in_use(port, 4):
             self.logger.error(f'Port {port} is already in use. Cleaning up...')
@@ -56,25 +56,26 @@ class TmuxDeployment(Deployment):
                     exclude=self.prefix, specific_prefix=session['used_conda_prefix']
                 )
             self.logger.info(f'Deployed model in session: {self.session_name}')
+            # ToDo: 'Unrecognized response type; displaying content as text.'
+            return 'Deployed model'
         except HTTPException as ex:
             self.logger.info('Model could not be deployed. Starting old model server if existing.')
             self._start_model_server(server, workers, port, existing_session=True)
             raise ex
-        return super().deploy_model()
 
     def undeploy_model(self):
         stopped_sessions = self._stop_model_server(find_by=['version'], kill_session=True)
         for stopped_session in stopped_sessions:
             self._delete_env_if_exists(specific_prefix=stopped_session['used_conda_prefix'])
         if len(stopped_sessions) > 0:
-            self.logger.info(f'Undeployed model from session: {self.model}, {self.version}')
+            self.logger.info(f'Undeployed model (tmux): {self.model}, {self.version}')
+            return 'Successfully undeployed model'
         else:
             self.logger.info(f'Model could not be undeployed: {self.model}, {self.version}')
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f'Model could not be undeployed: {self.model}, {self.version}',
             )
-        return super().undeploy_model()
 
     @classmethod
     def get_running_models(
@@ -83,7 +84,7 @@ class TmuxDeployment(Deployment):
         version: str = None,
         session_name_start: str = None,
         return_only_sessions: bool = False,
-    ):
+    ) -> List[dict]:
         logger = self.init_logger()
         server = libtmux.Server()
         try:
@@ -115,32 +116,10 @@ class TmuxDeployment(Deployment):
             logger.debug(f'Running model sessions: {str(sessions_fmt)}')
         return sessions_fmt
 
-    def _launch_gunicorn_in_session(self, session, raise_error):
-        pane = session.attached_pane
-        pane.send_keys(f'conda activate {self.prefix}')
-        used_model = session.show_environment('model_name')
-        used_version = session.show_environment('model_version')
-        used_port = session.show_environment('model_port')
-        used_workers = session.show_environment('model_workers')
-        pane.send_keys(
-            f'bentoml serve-gunicorn --port {used_port} --workers {used_workers} {used_model}:{used_version}'
-        )
-        if not self._is_service_healthy(used_port, 7):
-            detail = '\n'.join(pane.capture_pane())
-            pane.send_keys('C-c', enter=False, suppress_history=False)
-            session.kill_session()
-            self.logger.info(f'Could not deploy service: {detail}')
-            if raise_error:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f'Could not deploy service.\n{detail}',
-                )
-            return False
-
     def _start_model_server(
         self,
-        server,
-        existing_sessions: list = False,
+        server: libtmux.Server,
+        existing_sessions: List[libtmux.Session] = None,
         port: int = None,
         workers: int = None,
         raise_error: bool = True,
@@ -171,7 +150,30 @@ class TmuxDeployment(Deployment):
         self._launch_gunicorn_in_session(session, raise_error)
         self.logger.debug(f'Started model server: {session.name}.')
 
-    def _stop_model_server(self, find_by: list, kill_session: bool, exclude: str = ''):
+    def _launch_gunicorn_in_session(self, session: libtmux.Session, raise_error: bool):
+        pane = session.attached_pane
+        pane.send_keys(f'conda activate {self.prefix}')
+        used_model = session.show_environment('model_name')
+        used_version = session.show_environment('model_version')
+        used_port = session.show_environment('model_port')
+        used_workers = session.show_environment('model_workers')
+        pane.send_keys(
+            f'bentoml serve-gunicorn --port {used_port} --workers {used_workers} {used_model}:{used_version}'
+        )
+        if not self._is_service_healthy(used_port, 7):
+            detail = '\n'.join(pane.capture_pane())
+            pane.send_keys('C-c', enter=False, suppress_history=False)
+            session.kill_session()
+            self.logger.info(f'Could not deploy service: {detail}')
+            if raise_error:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f'Could not deploy service.\n{detail}',
+                )
+
+    def _stop_model_server(
+        self, find_by: List[Literal['version', 'stage']], kill_session: bool, exclude: str = ''
+    ) -> List[dict]:
         self.logger.debug(f'Stopping possible running model server, kill_session={kill_session}.')
 
         sessions = []
@@ -206,7 +208,7 @@ class TmuxDeployment(Deployment):
             self.logger.debug('No running sessions stopped.')
         return stopped_sessions
 
-    def _delete_env_if_exists(self, exclude: str = '', specific_prefix: str = None):
+    def _delete_env_if_exists(self, exclude: str = '', specific_prefix: str = None) -> bool:
         self.logger.error(f'Deleting conda environments: {self.prefix_general}')
         envs = run_command(Commands.INFO, '--envs')[0].split()
         found_envs = []
@@ -229,11 +231,7 @@ class TmuxDeployment(Deployment):
 
     def _create_env_from_model(self):
         self.logger.debug(f'Creating new conda environment: {self.prefix}')
-        bentoml_model = self.get_bentoml_model_by_version()
-        if not bentoml_model:
-            raise YataiRepositoryException(
-                f'BentoService {self.model}:{self.version} does not exist'
-            )
+        _, bentoml_model = self.get_bentoml_model_by_version()
         bentoml_model_env = bentoml_model.bento_service_metadata.env
         python_version = bentoml_model_env.python_version
         pip_packages = list(bentoml_model_env.pip_packages)
