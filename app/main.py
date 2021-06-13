@@ -19,6 +19,17 @@ security = HTTPBasic()
 
 
 def authenticate(credentials: HTTPBasicCredentials = Depends(security)):
+    """[summary]
+
+    Args:
+        credentials (HTTPBasicCredentials, optional): [description]. Defaults to Depends(security).
+
+    Raises:
+        HTTPException: [description]
+
+    Returns:
+        [type]: [description]
+    """
     correct_username = secrets.compare_digest(credentials.username, "user")
     correct_password = secrets.compare_digest(credentials.password, "pw")
     if not (correct_username and correct_password):
@@ -31,6 +42,14 @@ def authenticate(credentials: HTTPBasicCredentials = Depends(security)):
 
 
 def get_runtime_env(runtime_env: RuntimeEnvType) -> Union[DockerDeployment, TmuxDeployment]:
+    """[summary]
+
+    Args:
+        runtime_env (RuntimeEnvType): [description]
+
+    Returns:
+        Union[DockerDeployment, TmuxDeployment]: [description]
+    """
     if runtime_env == RuntimeEnv.DOCKER:
         return DockerDeployment
     if runtime_env == RuntimeEnv.TMUX:

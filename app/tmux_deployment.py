@@ -14,7 +14,7 @@ from libtmux.exc import LibTmuxException
 
 from app.base_deployment import Deployment
 from app.models import Stage, StageType
-from app.utils import distinct, get_config
+from app.utils import _distinct, _get_config
 
 
 class TmuxDeployment(Deployment):
@@ -23,6 +23,13 @@ class TmuxDeployment(Deployment):
     BENTOML_GUNICORN_SERVING_STR = 'Booting worker'
 
     def __init__(self, model: str, version: str, stage: StageType = Stage.NONE):
+        """[summary]
+
+        Args:
+            model (str): [description]
+            version (str): [description]
+            stage (StageType, optional): [description]. Defaults to Stage.NONE.
+        """
         super().__init__(model=model, version=version, stage=stage)
         model_clean = re.sub(r'\W+', '', self.model).lower()
         stage_clean = re.sub(r'\W+', '', self.stage).lower()
@@ -35,6 +42,19 @@ class TmuxDeployment(Deployment):
         self.session_name_general = f'bentoml_{model_clean}_{stage_clean}'
 
     def deploy_model(self, port: int, workers: int):
+        """[summary]
+
+        Args:
+            port (int): [description]
+            workers (int): [description]
+
+        Raises:
+            HTTPException: [description]
+            ex: [description]
+
+        Returns:
+            [type]: [description]
+        """
         server = libtmux.Server()
         self._create_env_from_model()
         # ? Nicht nur Version, sondern auch Stage???
@@ -64,6 +84,14 @@ class TmuxDeployment(Deployment):
             raise ex
 
     def undeploy_model(self):
+        """[summary]
+
+        Raises:
+            HTTPException: [description]
+
+        Returns:
+            [type]: [description]
+        """
         stopped_sessions = self._stop_model_server(find_by=['version'], kill_session=True)
         for stopped_session in stopped_sessions:
             self._delete_env_if_exists(specific_prefix=stopped_session['used_conda_prefix'])
@@ -85,6 +113,17 @@ class TmuxDeployment(Deployment):
         session_name_start: str = None,
         return_only_sessions: bool = False,
     ) -> List[dict]:
+        """[summary]
+
+        Args:
+            name (str, optional): [description]. Defaults to None.
+            version (str, optional): [description]. Defaults to None.
+            session_name_start (str, optional): [description]. Defaults to None.
+            return_only_sessions (bool, optional): [description]. Defaults to False.
+
+        Returns:
+            List[dict]: [description]
+        """
         logger = self.init_logger()
         server = libtmux.Server()
         try:
@@ -124,6 +163,18 @@ class TmuxDeployment(Deployment):
         workers: int = None,
         raise_error: bool = True,
     ):
+        """[summary]
+
+        Args:
+            server (libtmux.Server): [description]
+            existing_sessions (List[libtmux.Session], optional): [description]. Defaults to None.
+            port (int, optional): [description]. Defaults to None.
+            workers (int, optional): [description]. Defaults to None.
+            raise_error (bool, optional): [description]. Defaults to True.
+
+        Raises:
+            LibTmuxException: [description]
+        """
         self.logger.debug(f'Starting model server, existing_session={existing_sessions}.')
 
         if isinstance(existing_sessions, list):
@@ -137,9 +188,9 @@ class TmuxDeployment(Deployment):
             return
 
         session = server.new_session(session_name=self.session_name)
-        for k, v in get_config('yatai').items():
+        for k, v in _get_config('yatai').items():
             session.set_environment(k, v)
-        for k, v in get_config('env_vars').items():
+        for k, v in _get_config('env_vars').items():
             session.set_environment(k, v)
         session.set_environment('model_name', self.model)
         session.set_environment('model_version', self.version)
@@ -151,6 +202,15 @@ class TmuxDeployment(Deployment):
         self.logger.debug(f'Started model server: {session.name}.')
 
     def _launch_gunicorn_in_session(self, session: libtmux.Session, raise_error: bool):
+        """[summary]
+
+        Args:
+            session (libtmux.Session): [description]
+            raise_error (bool): [description]
+
+        Raises:
+            HTTPException: [description]
+        """
         pane = session.attached_pane
         pane.send_keys(f'conda activate {self.prefix}')
         used_model = session.show_environment('model_name')
@@ -174,6 +234,16 @@ class TmuxDeployment(Deployment):
     def _stop_model_server(
         self, find_by: List[Literal['version', 'stage']], kill_session: bool, exclude: str = ''
     ) -> List[dict]:
+        """[summary]
+
+        Args:
+            find_by (List[Literal[): [description]
+            kill_session (bool): [description]
+            exclude (str, optional): [description]. Defaults to ''.
+
+        Returns:
+            List[dict]: [description]
+        """
         self.logger.debug(f'Stopping possible running model server, kill_session={kill_session}.')
 
         sessions = []
@@ -187,7 +257,7 @@ class TmuxDeployment(Deployment):
             )
 
         stopped_sessions = []
-        for session in distinct(sessions, 'name'):
+        for session in _distinct(sessions, 'name'):
             if session.name == exclude:
                 continue
             session.attached_pane.send_keys('C-c', enter=False, suppress_history=False)
@@ -209,6 +279,15 @@ class TmuxDeployment(Deployment):
         return stopped_sessions
 
     def _delete_env_if_exists(self, exclude: str = '', specific_prefix: str = None) -> bool:
+        """[summary]
+
+        Args:
+            exclude (str, optional): [description]. Defaults to ''.
+            specific_prefix (str, optional): [description]. Defaults to None.
+
+        Returns:
+            bool: [description]
+        """
         self.logger.error(f'Deleting conda environments: {self.prefix_general}')
         envs = run_command(Commands.INFO, '--envs')[0].split()
         found_envs = []
@@ -230,6 +309,11 @@ class TmuxDeployment(Deployment):
             return True
 
     def _create_env_from_model(self):
+        """[summary]
+
+        Raises:
+            HTTPException: [description]
+        """
         self.logger.debug(f'Creating new conda environment: {self.prefix}')
         _, bentoml_model = self.get_bentoml_model_by_version()
         bentoml_model_env = bentoml_model.bento_service_metadata.env

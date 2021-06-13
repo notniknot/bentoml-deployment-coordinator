@@ -12,11 +12,18 @@ from fastapi import HTTPException, status
 
 from app.base_deployment import Deployment
 from app.models import Stage, StageType
-from app.utils import distinct
+from app.utils import _distinct
 
 
 class DockerDeployment(Deployment):
     def __init__(self, model: str, version: str = '', stage: StageType = Stage.NONE):
+        """[summary]
+
+        Args:
+            model (str): [description]
+            version (str, optional): [description]. Defaults to ''.
+            stage (StageType, optional): [description]. Defaults to Stage.NONE.
+        """
         super().__init__(model=model, stage=stage, version=version)
         model_clean = re.sub(r'\W+', '', self.model).lower()
         stage_clean = re.sub(r'\W+', '', self.stage).lower()
@@ -29,6 +36,18 @@ class DockerDeployment(Deployment):
         self.container_name_general = f'bentoml_{model_clean}_{stage_clean}'
 
     def deploy_model(self, port: int, workers: int):
+        """[summary]
+
+        Args:
+            port (int): [description]
+            workers (int): [description]
+
+        Raises:
+            HTTPException: [description]
+
+        Returns:
+            [type]: [description]
+        """
         docker_client = docker.from_env()
         stopped_containers = self._stop_model_server(
             docker_client, find_by=['version', 'stage'], remove_container=False
@@ -50,6 +69,14 @@ class DockerDeployment(Deployment):
         return 'Deployed model'
 
     def undeploy_model(self):
+        """[summary]
+
+        Raises:
+            HTTPException: [description]
+
+        Returns:
+            [type]: [description]
+        """
         docker_client = docker.from_env()
         stopped_containers = self._stop_model_server(
             docker_client, find_by=['version'], remove_container=True
@@ -66,6 +93,11 @@ class DockerDeployment(Deployment):
 
     @classmethod
     def get_running_models(self) -> List[dict]:
+        """[summary]
+
+        Returns:
+            List[dict]: [description]
+        """
         logger = self.init_logger()
         docker_client = docker.from_env()
         containers = docker_client.containers.list(filters={'name': 'bentoml_'})
@@ -85,6 +117,18 @@ class DockerDeployment(Deployment):
         port: int = None,
         workers: int = None,
     ):
+        """[summary]
+
+        Args:
+            docker_client (DockerClient): [description]
+            existing_containers (list, optional): [description]. Defaults to None.
+            port (int, optional): [description]. Defaults to None.
+            workers (int, optional): [description]. Defaults to None.
+
+        Raises:
+            HTTPException: [description]
+            HTTPException: [description]
+        """
         if isinstance(existing_containers, list):
             for existing_container in existing_containers:
                 existing_container.start()
@@ -155,6 +199,17 @@ class DockerDeployment(Deployment):
         remove_container: bool,
         exclude: str = '',
     ) -> List[Container]:
+        """[summary]
+
+        Args:
+            docker_client (DockerClient): [description]
+            find_by (List[Literal[): [description]
+            remove_container (bool): [description]
+            exclude (str, optional): [description]. Defaults to ''.
+
+        Returns:
+            List[Container]: [description]
+        """
         self.logger.debug(
             f'Stopping possible running model server, remove_container={remove_container}.'
         )
@@ -170,7 +225,7 @@ class DockerDeployment(Deployment):
             )
 
         stopped_containers = []
-        for container in distinct(containers, 'id'):
+        for container in _distinct(containers, 'id'):
             if container.name == exclude:
                 continue
             if container.status == 'running':

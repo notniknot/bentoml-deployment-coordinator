@@ -4,7 +4,15 @@ from typing import Any, List
 import yaml
 
 
-def get_config(key: str) -> dict:
+def _get_config(key: str) -> dict:
+    """[summary]
+
+    Args:
+        key (str): [description]
+
+    Returns:
+        dict: [description]
+    """
     current_dir = os.path.dirname(os.path.realpath(__file__))
     config_path = os.path.join(current_dir, 'config.yaml')
     if not os.path.exists(config_path):
@@ -17,7 +25,16 @@ def get_config(key: str) -> dict:
         return dict()
 
 
-def distinct(obj_list: List[Any], attr: str) -> List[Any]:
+def _distinct(obj_list: List[Any], attr: str) -> List[Any]:
+    """[summary]
+
+    Args:
+        obj_list (List[Any]): [description]
+        attr (str): [description]
+
+    Returns:
+        List[Any]: [description]
+    """
     distinct_obj_list = []
     for obj in obj_list:
         for distinct_obj in distinct_obj_list:

@@ -13,21 +13,24 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from app.models import StageType
-from app.utils import get_config
+from app.utils import _get_config
 
 
 class IDeployment(ABC):
     @abstractmethod
     def deploy_model(self):
+        """..."""
         pass
 
     @abstractmethod
     def undeploy_model(self):
+        """..."""
         pass
 
     @classmethod
     @abstractmethod
     def get_running_models(self):
+        """..."""
         pass
 
 
@@ -38,30 +41,45 @@ class Deployment(IDeployment, ABC):
         version: str,
         stage: StageType,
     ):
+        """[summary]
+
+        Args:
+            model (str): [description]
+            version (str): [description]
+            stage (StageType): [description]
+        """
         os.environ['BENTOML_DO_NOT_TRACK'] = 'True'
         self.logger = self.init_logger()
         self.logger.info(f'Initializing {type(self).__name__}: {model}:{version}')
         self.model = model
         self.version = version
         self.stage = stage.value
-        for k, v in get_config('yatai').items():
+        for k, v in _get_config('yatai').items():
             os.environ[k] = v
 
     @abstractmethod
     def deploy_model(self):
+        """..."""
         pass
 
     @abstractmethod
     def undeploy_model(self):
+        """..."""
         pass
 
     @classmethod
     @abstractmethod
     def get_running_models(self):
+        """..."""
         pass
 
     @classmethod
     def init_logger(self) -> logging.Logger:
+        """[summary]
+
+        Returns:
+            logging.Logger: [description]
+        """
         logging.basicConfig(format='[%(asctime)s] %(levelname)s  %(name)s: %(message)s')
         logger = logging.getLogger('coordinator')
         logger.setLevel(logging.DEBUG)
@@ -69,6 +87,14 @@ class Deployment(IDeployment, ABC):
         return logger
 
     def get_bentoml_model_by_version(self) -> Tuple[YataiClient, BentoPB]:
+        """[summary]
+
+        Raises:
+            HTTPException: [description]
+
+        Returns:
+            Tuple[YataiClient, BentoPB]: [description]
+        """
         yatai_client = get_yatai_client()
         bento_pb = yatai_client.yatai_service.bento_metadata_store.get(self.model, self.version)
         if bento_pb is None:
@@ -79,6 +105,15 @@ class Deployment(IDeployment, ABC):
         return yatai_client, bento_pb
 
     def _is_service_healthy(self, port: int, retries: int) -> bool:
+        """[summary]
+
+        Args:
+            port (int): [description]
+            retries (int): [description]
+
+        Returns:
+            bool: [description]
+        """
         self.logger.debug('Checking for service health.')
         logging.getLogger('urllib3.connectionpool').setLevel(logging.ERROR)
         session = requests.Session()
