@@ -19,18 +19,18 @@ from app.utils import _get_config
 class IDeployment(ABC):
     @abstractmethod
     def deploy_model(self):
-        """..."""
+        """Abstract method to deploy model."""
         pass
 
     @abstractmethod
     def undeploy_model(self):
-        """..."""
+        """Abstract method to undeploy model."""
         pass
 
     @classmethod
     @abstractmethod
     def get_running_models(self):
-        """..."""
+        """Abstract method to get running models."""
         pass
 
 
@@ -41,12 +41,12 @@ class Deployment(IDeployment, ABC):
         version: str,
         stage: StageType,
     ):
-        """[summary]
+        """Create instance of base deployment technique.
 
         Args:
-            model (str): [description]
-            version (str): [description]
-            stage (StageType): [description]
+            model (str): Name of the model.
+            version (str): Version of the model.
+            stage (StageType): New stage of the model.
         """
         os.environ['BENTOML_DO_NOT_TRACK'] = 'True'
         self.logger = self.init_logger()
@@ -59,26 +59,26 @@ class Deployment(IDeployment, ABC):
 
     @abstractmethod
     def deploy_model(self):
-        """..."""
+        """Abstract method to deploy model."""
         pass
 
     @abstractmethod
     def undeploy_model(self):
-        """..."""
+        """Abstract method to undeploy model."""
         pass
 
     @classmethod
     @abstractmethod
     def get_running_models(self):
-        """..."""
+        """Abstract method to get running models."""
         pass
 
     @classmethod
     def init_logger(self) -> logging.Logger:
-        """[summary]
+        """Configure root logger and set log level for coordinator logger.
 
         Returns:
-            logging.Logger: [description]
+            logging.Logger: Logging instance of 'coordinator'.
         """
         logging.basicConfig(format='[%(asctime)s] %(levelname)s  %(name)s: %(message)s')
         logger = logging.getLogger('coordinator')
@@ -87,13 +87,13 @@ class Deployment(IDeployment, ABC):
         return logger
 
     def get_bentoml_model_by_version(self) -> Tuple[YataiClient, BentoPB]:
-        """[summary]
+        """Retrieve model information from BentoML-Repository.
 
         Raises:
-            HTTPException: [description]
+            HTTPException: If model could not be retrieved.
 
         Returns:
-            Tuple[YataiClient, BentoPB]: [description]
+            Tuple[YataiClient, BentoPB]: YataiClient for further operations, BentoProtoBuffer.
         """
         yatai_client = get_yatai_client()
         bento_pb = yatai_client.yatai_service.bento_metadata_store.get(self.model, self.version)
@@ -105,14 +105,14 @@ class Deployment(IDeployment, ABC):
         return yatai_client, bento_pb
 
     def _is_service_healthy(self, port: int, retries: int) -> bool:
-        """[summary]
+        """Checks healthz endpoint of BentoML model for life.
 
         Args:
-            port (int): [description]
-            retries (int): [description]
+            port (int): Port of the deployed model.
+            retries (int): Number of retries before giving up.
 
         Returns:
-            bool: [description]
+            bool: Whether service is reachable or not.
         """
         self.logger.debug('Checking for service health.')
         logging.getLogger('urllib3.connectionpool').setLevel(logging.ERROR)
@@ -129,6 +129,15 @@ class Deployment(IDeployment, ABC):
             return False
 
     def _is_port_in_use(self, port: int, retry: int = 3) -> bool:
+        """Checks if a given port is already in use.
+
+        Args:
+            port (int): Given port to check.
+            retry (int, optional): Number of retries to check. Defaults to 3.
+
+        Returns:
+            bool: Whether port is in use or not.
+        """
         for _ in range(retry):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 if s.connect_ex(('localhost', port)) != 0:

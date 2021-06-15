@@ -18,17 +18,17 @@ app = FastAPI(
 security = HTTPBasic()
 
 
-def authenticate(credentials: HTTPBasicCredentials = Depends(security)):
-    """[summary]
+def authenticate(credentials: HTTPBasicCredentials = Depends(security)) -> str:
+    """Basic HTTP authentication.
 
     Args:
-        credentials (HTTPBasicCredentials, optional): [description]. Defaults to Depends(security).
+        credentials (HTTPBasicCredentials, optional): Containing username and password. Defaults to Depends(security).
 
     Raises:
-        HTTPException: [description]
+        HTTPException: If credentials don't match.
 
     Returns:
-        [type]: [description]
+        str: Username if authenticated successfully.
     """
     correct_username = secrets.compare_digest(credentials.username, "user")
     correct_password = secrets.compare_digest(credentials.password, "pw")
@@ -42,13 +42,13 @@ def authenticate(credentials: HTTPBasicCredentials = Depends(security)):
 
 
 def get_runtime_env(runtime_env: RuntimeEnvType) -> Union[DockerDeployment, TmuxDeployment]:
-    """[summary]
+    """Choose appropriate runtime environment.
 
     Args:
-        runtime_env (RuntimeEnvType): [description]
+        runtime_env (RuntimeEnvType): Runtime environment enum
 
     Returns:
-        Union[DockerDeployment, TmuxDeployment]: [description]
+        Union[DockerDeployment, TmuxDeployment]: Either Docker- or Tmux-Class.
     """
     if runtime_env == RuntimeEnv.DOCKER:
         return DockerDeployment

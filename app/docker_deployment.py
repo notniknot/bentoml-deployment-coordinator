@@ -17,12 +17,12 @@ from app.utils import _distinct
 
 class DockerDeployment(Deployment):
     def __init__(self, model: str, version: str = '', stage: StageType = Stage.NONE):
-        """[summary]
+        """Create instance of docker deployment technique.
 
         Args:
-            model (str): [description]
-            version (str, optional): [description]. Defaults to ''.
-            stage (StageType, optional): [description]. Defaults to Stage.NONE.
+            model (str): Name of the model.
+            version (str, optional): Version of the model. Defaults to ''.
+            stage (StageType, optional): New stage of the model. Defaults to Stage.NONE.
         """
         super().__init__(model=model, stage=stage, version=version)
         model_clean = re.sub(r'\W+', '', self.model).lower()
@@ -36,17 +36,14 @@ class DockerDeployment(Deployment):
         self.container_name_general = f'bentoml_{model_clean}_{stage_clean}'
 
     def deploy_model(self, port: int, workers: int):
-        """[summary]
+        """Deploy model in docker container.
 
         Args:
-            port (int): [description]
-            workers (int): [description]
+            port (int): Port to forward.
+            workers (int): Number of workers to spawn.
 
         Raises:
-            HTTPException: [description]
-
-        Returns:
-            [type]: [description]
+            HTTPException: If port is already in use.
         """
         docker_client = docker.from_env()
         stopped_containers = self._stop_model_server(
@@ -69,13 +66,10 @@ class DockerDeployment(Deployment):
         return 'Deployed model'
 
     def undeploy_model(self):
-        """[summary]
+        """Undeploy model from docker container.
 
         Raises:
-            HTTPException: [description]
-
-        Returns:
-            [type]: [description]
+            HTTPException: If container could not be stopped.
         """
         docker_client = docker.from_env()
         stopped_containers = self._stop_model_server(
@@ -93,10 +87,10 @@ class DockerDeployment(Deployment):
 
     @classmethod
     def get_running_models(self) -> List[dict]:
-        """[summary]
+        """Get running models in docker containers.
 
         Returns:
-            List[dict]: [description]
+            List[dict]: Information about running models.
         """
         logger = self.init_logger()
         docker_client = docker.from_env()
@@ -117,17 +111,16 @@ class DockerDeployment(Deployment):
         port: int = None,
         workers: int = None,
     ):
-        """[summary]
+        """Build and run the docker container.
 
         Args:
-            docker_client (DockerClient): [description]
-            existing_containers (list, optional): [description]. Defaults to None.
-            port (int, optional): [description]. Defaults to None.
-            workers (int, optional): [description]. Defaults to None.
+            docker_client (DockerClient): Docker client to use.
+            existing_containers (list, optional): List of existing containers that should be restarted. Defaults to None.
+            port (int, optional): Port to forward. Defaults to None.
+            workers (int, optional): Number of workers to spawn. Defaults to None.
 
         Raises:
-            HTTPException: [description]
-            HTTPException: [description]
+            HTTPException: If docker container could not be built or run.
         """
         if isinstance(existing_containers, list):
             for existing_container in existing_containers:
@@ -199,16 +192,16 @@ class DockerDeployment(Deployment):
         remove_container: bool,
         exclude: str = '',
     ) -> List[Container]:
-        """[summary]
+        """Stop and (if required) remove the docker container.
 
         Args:
-            docker_client (DockerClient): [description]
-            find_by (List[Literal[): [description]
-            remove_container (bool): [description]
-            exclude (str, optional): [description]. Defaults to ''.
+            docker_client (DockerClient): Docker client to use.
+            find_by (List[Literal[): Search containers by 'version' and/or 'stage'.
+            remove_container (bool): Remove container(s).
+            exclude (str, optional): Exclude container by name from search. Defaults to ''.
 
         Returns:
-            List[Container]: [description]
+            List[Container]: List of stopped containers.
         """
         self.logger.debug(
             f'Stopping possible running model server, remove_container={remove_container}.'

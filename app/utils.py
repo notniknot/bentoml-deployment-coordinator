@@ -5,13 +5,13 @@ import yaml
 
 
 def _get_config(key: str) -> dict:
-    """[summary]
+    """Read config file.
 
     Args:
-        key (str): [description]
+        key (str): Key to look for in config file.
 
     Returns:
-        dict: [description]
+        dict: Config by key.
     """
     current_dir = os.path.dirname(os.path.realpath(__file__))
     config_path = os.path.join(current_dir, 'config.yaml')
@@ -26,14 +26,14 @@ def _get_config(key: str) -> dict:
 
 
 def _distinct(obj_list: List[Any], attr: str) -> List[Any]:
-    """[summary]
+    """Reduce list of unhashable objects to distinct occurences.
 
     Args:
-        obj_list (List[Any]): [description]
-        attr (str): [description]
+        obj_list (List[Any]): List of unhashable objects.
+        attr (str): Attribute for comparison.
 
     Returns:
-        List[Any]: [description]
+        List[Any]: Reduced list of distinct objects.
     """
     distinct_obj_list = []
     for obj in obj_list:

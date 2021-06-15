@@ -23,12 +23,12 @@ class TmuxDeployment(Deployment):
     BENTOML_GUNICORN_SERVING_STR = 'Booting worker'
 
     def __init__(self, model: str, version: str, stage: StageType = Stage.NONE):
-        """[summary]
+        """Create instance of tmux deployment technique.
 
         Args:
-            model (str): [description]
-            version (str): [description]
-            stage (StageType, optional): [description]. Defaults to Stage.NONE.
+            model (str): Name of the model.
+            version (str, optional): Version of the model. Defaults to ''.
+            stage (StageType, optional): New stage of the model. Defaults to Stage.NONE.
         """
         super().__init__(model=model, version=version, stage=stage)
         model_clean = re.sub(r'\W+', '', self.model).lower()
@@ -42,18 +42,14 @@ class TmuxDeployment(Deployment):
         self.session_name_general = f'bentoml_{model_clean}_{stage_clean}'
 
     def deploy_model(self, port: int, workers: int):
-        """[summary]
+        """Deploy model in tmux session.
 
         Args:
-            port (int): [description]
-            workers (int): [description]
+            port (int): Port for Gunicorn to use.
+            workers (int): Number of workers to spawn.
 
         Raises:
-            HTTPException: [description]
-            ex: [description]
-
-        Returns:
-            [type]: [description]
+            HTTPException: If port is already in use.
         """
         server = libtmux.Server()
         self._create_env_from_model()
@@ -84,13 +80,10 @@ class TmuxDeployment(Deployment):
             raise ex
 
     def undeploy_model(self):
-        """[summary]
+        """Undeploy model from tmux sesison.
 
         Raises:
-            HTTPException: [description]
-
-        Returns:
-            [type]: [description]
+            HTTPException: If tmux session could not be stopped.
         """
         stopped_sessions = self._stop_model_server(find_by=['version'], kill_session=True)
         for stopped_session in stopped_sessions:
@@ -113,16 +106,16 @@ class TmuxDeployment(Deployment):
         session_name_start: str = None,
         return_only_sessions: bool = False,
     ) -> List[dict]:
-        """[summary]
+        """Get running models in tmux sessions.
 
         Args:
-            name (str, optional): [description]. Defaults to None.
-            version (str, optional): [description]. Defaults to None.
-            session_name_start (str, optional): [description]. Defaults to None.
-            return_only_sessions (bool, optional): [description]. Defaults to False.
+            name (str, optional): Name of the model. Defaults to None.
+            version (str, optional): Version of the model. Defaults to None.
+            session_name_start (str, optional): String the session name starts with. Defaults to None.
+            return_only_sessions (bool, optional): If session objects should be returned. Defaults to False.
 
         Returns:
-            List[dict]: [description]
+            List[dict]: Information about running models.
         """
         logger = self.init_logger()
         server = libtmux.Server()
@@ -163,17 +156,17 @@ class TmuxDeployment(Deployment):
         workers: int = None,
         raise_error: bool = True,
     ):
-        """[summary]
+        """Create session and set environment variables.
 
         Args:
-            server (libtmux.Server): [description]
-            existing_sessions (List[libtmux.Session], optional): [description]. Defaults to None.
-            port (int, optional): [description]. Defaults to None.
-            workers (int, optional): [description]. Defaults to None.
-            raise_error (bool, optional): [description]. Defaults to True.
+            server (libtmux.Server): libtmux Server object.
+            existing_sessions (List[libtmux.Session], optional): List of existing models that should be restarted. Defaults to None.
+            port (int, optional): Port for Gunicorn to use. Defaults to None.
+            workers (int, optional): Number of workers to spawn. Defaults to None.
+            raise_error (bool, optional): If errors should be raised. Defaults to True.
 
         Raises:
-            LibTmuxException: [description]
+            LibTmuxException: If old sessions could not be found to restart Gunicorn.
         """
         self.logger.debug(f'Starting model server, existing_session={existing_sessions}.')
 
@@ -202,14 +195,14 @@ class TmuxDeployment(Deployment):
         self.logger.debug(f'Started model server: {session.name}.')
 
     def _launch_gunicorn_in_session(self, session: libtmux.Session, raise_error: bool):
-        """[summary]
+        """Launch Gunicorn in tmux session.
 
         Args:
-            session (libtmux.Session): [description]
-            raise_error (bool): [description]
+            session (libtmux.Session): Session object.
+            raise_error (bool): If errors should be raised.
 
         Raises:
-            HTTPException: [description]
+            HTTPException: If model health check if unsuccessful.
         """
         pane = session.attached_pane
         pane.send_keys(f'conda activate {self.prefix}')
@@ -234,15 +227,15 @@ class TmuxDeployment(Deployment):
     def _stop_model_server(
         self, find_by: List[Literal['version', 'stage']], kill_session: bool, exclude: str = ''
     ) -> List[dict]:
-        """[summary]
+        """Find and stop model instances.
 
         Args:
-            find_by (List[Literal[): [description]
-            kill_session (bool): [description]
-            exclude (str, optional): [description]. Defaults to ''.
+            find_by (List[Literal[): Search sessions by 'version' and/or 'stage'.
+            kill_session (bool): If the session should be killed.
+            exclude (str, optional): Exclude session by name from search. Defaults to ''.
 
         Returns:
-            List[dict]: [description]
+            List[dict]: List of stopped sessions.
         """
         self.logger.debug(f'Stopping possible running model server, kill_session={kill_session}.')
 
@@ -279,14 +272,14 @@ class TmuxDeployment(Deployment):
         return stopped_sessions
 
     def _delete_env_if_exists(self, exclude: str = '', specific_prefix: str = None) -> bool:
-        """[summary]
+        """Check if conda enviornment exists and delete it.
 
         Args:
-            exclude (str, optional): [description]. Defaults to ''.
-            specific_prefix (str, optional): [description]. Defaults to None.
+            exclude (str, optional): Exclude conda environment from search. Defaults to ''.
+            specific_prefix (str, optional): Seach for specific conda prefix. Defaults to None.
 
         Returns:
-            bool: [description]
+            bool: Whether any conda enviornments could be deleted or not.
         """
         self.logger.error(f'Deleting conda environments: {self.prefix_general}')
         envs = run_command(Commands.INFO, '--envs')[0].split()
@@ -309,10 +302,10 @@ class TmuxDeployment(Deployment):
             return True
 
     def _create_env_from_model(self):
-        """[summary]
+        """Set up a conda environment by the BentoML ProtoBuffer information.
 
         Raises:
-            HTTPException: [description]
+            HTTPException: If conda environment could not be created.
         """
         self.logger.debug(f'Creating new conda environment: {self.prefix}')
         _, bentoml_model = self.get_bentoml_model_by_version()
