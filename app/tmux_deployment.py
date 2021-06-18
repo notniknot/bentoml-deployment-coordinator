@@ -22,7 +22,7 @@ class TmuxDeployment(Deployment):
     BENTOML_FLASK_SERVING_STR = 'Serving Flask app'
     BENTOML_GUNICORN_SERVING_STR = 'Booting worker'
 
-    def __init__(self, model: str, version: str, stage: StageType = Stage.NONE):
+    def __init__(self, name: str, version: str, stage: StageType = Stage.NONE):
         """Create instance of tmux deployment technique.
 
         Args:
@@ -30,16 +30,16 @@ class TmuxDeployment(Deployment):
             version (str, optional): Version of the model. Defaults to ''.
             stage (StageType, optional): New stage of the model. Defaults to Stage.NONE.
         """
-        super().__init__(model=model, version=version, stage=stage)
-        model_clean = re.sub(r'\W+', '', self.model).lower()
+        super().__init__(name=name, version=version, stage=stage)
+        name_clean = re.sub(r'\W+', '', self.name).lower()
         stage_clean = re.sub(r'\W+', '', self.stage).lower()
         random_string = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
-        self.env_name = f'bentoml_{model_clean}_{stage_clean}_{random_string}'
-        self.env_name_general = f'bentoml_{model_clean}_{stage_clean}'
+        self.env_name = f'bentoml_{name_clean}_{stage_clean}_{random_string}'
+        self.env_name_general = f'bentoml_{name_clean}_{stage_clean}'
         self.prefix = os.path.abspath(os.path.join('./envs', self.env_name))
         self.prefix_general = os.path.abspath(os.path.join('./envs', self.env_name_general))
-        self.session_name = f'bentoml_{model_clean}_{stage_clean}_{random_string}'
-        self.session_name_general = f'bentoml_{model_clean}_{stage_clean}'
+        self.session_name = f'bentoml_{name_clean}_{stage_clean}_{random_string}'
+        self.session_name_general = f'bentoml_{name_clean}_{stage_clean}'
 
     def deploy_model(self, port: int, workers: int):
         """Deploy model in tmux session.
@@ -89,13 +89,13 @@ class TmuxDeployment(Deployment):
         for stopped_session in stopped_sessions:
             self._delete_env_if_exists(specific_prefix=stopped_session['used_conda_prefix'])
         if len(stopped_sessions) > 0:
-            self.logger.info(f'Undeployed model (tmux): {self.model}, {self.version}')
+            self.logger.info(f'Undeployed model (tmux): {self.name}, {self.version}')
             return 'Successfully undeployed model'
         else:
-            self.logger.info(f'Model could not be undeployed: {self.model}, {self.version}')
+            self.logger.info(f'Model could not be undeployed: {self.name}, {self.version}')
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f'Model could not be undeployed: {self.model}, {self.version}',
+                detail=f'Model could not be undeployed: {self.name}, {self.version}',
             )
 
     @classmethod
@@ -185,7 +185,7 @@ class TmuxDeployment(Deployment):
             session.set_environment(k, v)
         for k, v in _get_config('env_vars').items():
             session.set_environment(k, v)
-        session.set_environment('model_name', self.model)
+        session.set_environment('model_name', self.name)
         session.set_environment('model_version', self.version)
         session.set_environment('model_stage', self.stage)
         session.set_environment('model_port', port)
@@ -242,7 +242,7 @@ class TmuxDeployment(Deployment):
         sessions = []
         if 'version' in find_by:
             sessions += self.get_running_models(
-                name=self.model, version=self.version, return_only_sessions=True
+                name=self.name, version=self.version, return_only_sessions=True
             )
         if 'stage' in find_by:
             sessions += self.get_running_models(

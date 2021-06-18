@@ -37,7 +37,7 @@ class IDeployment(ABC):
 class Deployment(IDeployment, ABC):
     def __init__(
         self,
-        model: str,
+        name: str,
         version: str,
         stage: StageType,
     ):
@@ -50,8 +50,8 @@ class Deployment(IDeployment, ABC):
         """
         os.environ['BENTOML_DO_NOT_TRACK'] = 'True'
         self.logger = self.init_logger()
-        self.logger.info(f'Initializing {type(self).__name__}: {model}:{version}')
-        self.model = model
+        self.logger.info(f'Initializing {type(self).__name__}: {name}:{version}')
+        self.name = name
         self.version = version
         self.stage = stage.value
         for k, v in _get_config('yatai').items():
@@ -96,11 +96,11 @@ class Deployment(IDeployment, ABC):
             Tuple[YataiClient, BentoPB]: YataiClient for further operations, BentoProtoBuffer.
         """
         yatai_client = get_yatai_client()
-        bento_pb = yatai_client.yatai_service.bento_metadata_store.get(self.model, self.version)
+        bento_pb = yatai_client.yatai_service.bento_metadata_store.get(self.name, self.version)
         if bento_pb is None:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f'BentoService {self.model}:{self.version} does not exist in BentoML-Repo',
+                detail=f'BentoService {self.name}:{self.version} does not exist in BentoML-Repo',
             )
         return yatai_client, bento_pb
 

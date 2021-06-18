@@ -21,7 +21,7 @@ StageType = NewType('Stage', Stage)
 
 
 class DeployModelInput(BaseModel):
-    model: str
+    name: str
     version: str
     stage: StageType = Stage.PRODUCTION
     old_stage: StageType = Stage.NONE
@@ -31,7 +31,7 @@ class DeployModelInput(BaseModel):
 
 
 class UndeployModelInput(BaseModel):
-    model: str
+    name: str
     version: str
     old_stage: StageType = Stage.PRODUCTION
     runtime_env: RuntimeEnvType = RuntimeEnv.TMUX

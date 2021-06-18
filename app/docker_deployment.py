@@ -16,7 +16,7 @@ from app.utils import _distinct
 
 
 class DockerDeployment(Deployment):
-    def __init__(self, model: str, version: str = '', stage: StageType = Stage.NONE):
+    def __init__(self, name: str, version: str = '', stage: StageType = Stage.NONE):
         """Create instance of docker deployment technique.
 
         Args:
@@ -24,16 +24,16 @@ class DockerDeployment(Deployment):
             version (str, optional): Version of the model. Defaults to ''.
             stage (StageType, optional): New stage of the model. Defaults to Stage.NONE.
         """
-        super().__init__(model=model, stage=stage, version=version)
-        model_clean = re.sub(r'\W+', '', self.model).lower()
+        super().__init__(name=name, stage=stage, version=version)
+        name_clean = re.sub(r'\W+', '', self.name).lower()
         stage_clean = re.sub(r'\W+', '', self.stage).lower()
         random_string = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
-        self.image_name = f'bentoml_{model_clean}_{stage_clean}:{random_string}'  # ToDo: Version???
-        self.image_name_general = f'bentoml_{model_clean}_{stage_clean}'
+        self.image_name = f'bentoml_{name_clean}_{stage_clean}:{random_string}'  # ToDo: Version???
+        self.image_name_general = f'bentoml_{name_clean}_{stage_clean}'
         self.container_name = (
-            f'bentoml_{model_clean}_{stage_clean}_{random_string}'  # ToDo: Random String necessary?
+            f'bentoml_{name_clean}_{stage_clean}_{random_string}'  # ToDo: Random String necessary?
         )
-        self.container_name_general = f'bentoml_{model_clean}_{stage_clean}'
+        self.container_name_general = f'bentoml_{name_clean}_{stage_clean}'
 
     def deploy_model(self, port: int, workers: int):
         """Deploy model in docker container.
@@ -76,13 +76,13 @@ class DockerDeployment(Deployment):
             docker_client, find_by=['version'], remove_container=True
         )
         if len(stopped_containers) > 0:
-            self.logger.info(f'Undeployed model (docker): {self.model}, {self.version}')
+            self.logger.info(f'Undeployed model (docker): {self.name}, {self.version}')
             return 'Successfully undeployed model'
         else:
-            self.logger.info(f'Model could not be undeployed: {self.model}, {self.version}')
+            self.logger.info(f'Model could not be undeployed: {self.name}, {self.version}')
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f'Model could not be undeployed: {self.model}, {self.version}',
+                detail=f'Model could not be undeployed: {self.name}, {self.version}',
             )
 
     @classmethod
@@ -152,7 +152,7 @@ class DockerDeployment(Deployment):
                     command=f'--workers={workers}',
                     ports={5000: port},
                     labels={
-                        'name': self.model,
+                        'name': self.name,
                         'version': self.version,
                         'stage': self.stage,
                         'port': str(port),
@@ -210,11 +210,11 @@ class DockerDeployment(Deployment):
         containers = []
         if 'version' in find_by:
             containers += docker_client.containers.list(
-                all=True, filters={'label': [f'name={self.model}', f'version={self.version}']}
+                all=True, filters={'label': [f'name={self.name}', f'version={self.version}']}
             )
         if 'stage' in find_by:
             containers += docker_client.containers.list(
-                all=True, filters={'label': [f'name={self.model}', f'stage={self.stage}']}
+                all=True, filters={'label': [f'name={self.name}', f'stage={self.stage}']}
             )
 
         stopped_containers = []
@@ -231,5 +231,5 @@ class DockerDeployment(Deployment):
                 self.logger.debug(f'Removing associated image: {container.image.tags[0]}')
                 docker_client.images.remove(image=container.attrs['Config']['Image'])
         if len(containers) == 0:
-            self.logger.debug(f'No running containers found for {self.model} (searched {find_by})')
+            self.logger.debug(f'No running containers found for {self.name} (searched {find_by})')
         return stopped_containers
