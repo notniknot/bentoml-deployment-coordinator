@@ -76,7 +76,7 @@ class TmuxDeployment(Deployment):
             return 'Deployed model'
         except HTTPException as ex:
             self.logger.info('Model could not be deployed. Starting old model server if existing.')
-            self._start_model_server(server, workers, port, existing_session=True)
+            self._start_model_server(server, existing_sessions=stopped_sessions, raise_error=False)
             raise ex
 
     def undeploy_model(self):
@@ -213,7 +213,7 @@ class TmuxDeployment(Deployment):
         pane.send_keys(
             f'bentoml serve-gunicorn --port {used_port} --workers {used_workers} {used_model}:{used_version}'
         )
-        if not self._is_service_healthy(used_port, 7):
+        if not self._is_service_healthy(used_port, 9):
             detail = '\n'.join(pane.capture_pane())
             pane.send_keys('C-c', enter=False, suppress_history=False)
             session.kill_session()
@@ -281,7 +281,7 @@ class TmuxDeployment(Deployment):
         Returns:
             bool: Whether any conda enviornments could be deleted or not.
         """
-        self.logger.error(f'Deleting conda environments: {self.prefix_general}')
+        self.logger.debug(f'Deleting conda environments: {self.prefix_general}')
         envs = run_command(Commands.INFO, '--envs')[0].split()
         found_envs = []
         if specific_prefix is not None and specific_prefix in envs:

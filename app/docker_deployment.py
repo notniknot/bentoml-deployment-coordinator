@@ -6,13 +6,16 @@ from typing import List, Literal
 import docker
 from bentoml.saved_bundle import safe_retrieve
 from bentoml.utils.tempdir import TempDirectory
+from bentoml.yatai.deployment.docker_utils import ensure_docker_available_or_raise
 from docker import DockerClient
 from docker.models.containers import Container
 from fastapi import HTTPException, status
 
 from app.base_deployment import Deployment
 from app.models import Stage, StageType
-from app.utils import _distinct
+from app.utils import _distinct, _get_config
+
+DOCKER_TIMEOUT = 120
 
 
 class DockerDeployment(Deployment):
@@ -34,6 +37,7 @@ class DockerDeployment(Deployment):
             f'bentoml_{name_clean}_{stage_clean}_{random_string}'  # ToDo: Random String necessary?
         )
         self.container_name_general = f'bentoml_{name_clean}_{stage_clean}'
+        ensure_docker_available_or_raise()
 
     def deploy_model(self, port: int, workers: int):
         """Deploy model in docker container.
@@ -144,7 +148,15 @@ class DockerDeployment(Deployment):
             )
             safe_retrieve(bento_service_bundle_path, temp_bundle_path)
             try:
-                docker_client.images.build(path=temp_bundle_path, tag=self.image_name, rm=True)
+                self.logger.debug(f'Building image for {self.name}:{self.version}.')
+                build_args = _get_config(('docker', 'build_args'))
+                docker_client.images.build(
+                    path=temp_bundle_path,
+                    tag=self.image_name,
+                    buildargs=build_args,
+                    rm=True,
+                    timeout=DOCKER_TIMEOUT,
+                )
                 self.logger.debug(f'Built image {self.image_name}.')
                 docker_client.containers.run(
                     image=self.image_name,
@@ -176,7 +188,7 @@ class DockerDeployment(Deployment):
             except docker.errors.ContainerError as error:
                 self.logger.error(f'The container exited with a non-zero exit code: {error}')
 
-        if not self._is_service_healthy(port, 7):
+        if not self._is_service_healthy(port, 9):
             self.logger.info('Could not deploy service: ...')
             container = docker_client.containers.get(self.container_name)
             logs = container.logs().decode()

@@ -1,17 +1,17 @@
 import os
-from typing import Any, List
+from typing import Any, List, Union
 
 import yaml
 
 
-def _get_config(key: str) -> dict:
+def _get_config(key_or_path: Union[str, tuple]) -> dict:
     """Read config file.
 
     Args:
-        key (str): Key to look for in config file.
+        key (str or tuple): Key/Path to look for in config file.
 
     Returns:
-        dict: Config by key.
+        dict: Config by key/path.
     """
     current_dir = os.path.dirname(os.path.realpath(__file__))
     config_path = os.path.join(current_dir, 'config.yaml')
@@ -19,10 +19,17 @@ def _get_config(key: str) -> dict:
         return dict()
     with open(config_path, 'r') as file:
         config = yaml.safe_load(file)
-    if key in config:
-        return config[key] or dict()
-    else:
-        return dict()
+    if isinstance(key_or_path, str) and key_or_path in config:
+        return config[key_or_path] or dict()
+    elif isinstance(key_or_path, tuple):
+        for path_ele in key_or_path:
+            if config is None:
+                break
+            if path_ele in config:
+                config = config[path_ele]
+        else:
+            return config
+    return dict()
 
 
 def _distinct(obj_list: List[Any], attr: str) -> List[Any]:

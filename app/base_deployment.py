@@ -7,6 +7,8 @@ from typing import Tuple
 
 import requests
 from bentoml.yatai.client import YataiClient, get_yatai_client
+
+# from bentoml.yatai.locking.lock import LockType, lock
 from bentoml.yatai.proto.repository_pb2 import Bento as BentoPB
 from fastapi import HTTPException, status
 from requests.adapters import HTTPAdapter
@@ -96,7 +98,13 @@ class Deployment(IDeployment, ABC):
             Tuple[YataiClient, BentoPB]: YataiClient for further operations, BentoProtoBuffer.
         """
         yatai_client = get_yatai_client()
+        # ! For Version 0.12
         bento_pb = yatai_client.yatai_service.bento_metadata_store.get(self.name, self.version)
+        # ! For Version 0.13
+        # db = yatai_client.yatai_service.db
+        # bento_id = f"{self.name}_{self.version}"
+        # with lock(db, [(bento_id, LockType.READ)]) as (sess, _):
+        #     bento_pb = db.metadata_store.get(sess, self.name, self.version)
         if bento_pb is None:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -117,7 +125,7 @@ class Deployment(IDeployment, ABC):
         self.logger.debug('Checking for service health.')
         logging.getLogger('urllib3.connectionpool').setLevel(logging.ERROR)
         session = requests.Session()
-        retries = Retry(total=retries, backoff_factor=0.1, status_forcelist=[500, 502, 503, 504])
+        retries = Retry(total=retries, backoff_factor=0.05, status_forcelist=[500, 502, 503, 504])
         session.mount('http://', HTTPAdapter(max_retries=retries))
         try:
             response = session.get(f'http://localhost:{port}/healthz', timeout=1)
