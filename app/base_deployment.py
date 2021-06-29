@@ -56,7 +56,7 @@ class Deployment(IDeployment, ABC):
         self.name = name
         self.version = version
         self.stage = stage.value
-        for k, v in _get_config('yatai').items():
+        for k, v in _get_config('env_vars').items():
             os.environ[k] = v
 
     @abstractmethod
@@ -85,7 +85,8 @@ class Deployment(IDeployment, ABC):
         logging.basicConfig(format='[%(asctime)s] %(levelname)s  %(name)s: %(message)s')
         logger = logging.getLogger('coordinator')
         logger.setLevel(logging.DEBUG)
-        # ToDo: Attach Handler that raises HTTPExceptions on error or critical?
+        # ToDo: Write logs to file
+        # ToDo: Write normal exceptions to file as well
         return logger
 
     def get_bentoml_model_by_version(self) -> Tuple[YataiClient, BentoPB]:
@@ -112,7 +113,7 @@ class Deployment(IDeployment, ABC):
             )
         return yatai_client, bento_pb
 
-    def _is_service_healthy(self, port: int, retries: int) -> bool:
+    def _is_service_healthy(self, port: int, retries: int, backoff_time: int = 1) -> bool:
         """Checks healthz endpoint of BentoML model for life.
 
         Args:
@@ -125,7 +126,13 @@ class Deployment(IDeployment, ABC):
         self.logger.debug('Checking for service health.')
         logging.getLogger('urllib3.connectionpool').setLevel(logging.ERROR)
         session = requests.Session()
-        retries = Retry(total=retries, backoff_factor=0.05, status_forcelist=[500, 502, 503, 504])
+
+        # MonkeyPatching the backoff time
+        def custom_backoff_time(self):
+            return backoff_time
+
+        Retry.get_backoff_time = custom_backoff_time
+        retries = Retry(total=retries)
         session.mount('http://', HTTPAdapter(max_retries=retries))
         try:
             response = session.get(f'http://localhost:{port}/healthz', timeout=1)
@@ -134,7 +141,7 @@ class Deployment(IDeployment, ABC):
                 return True
         except Exception:
             self.logger.debug('Health check unsuccessful.')
-            return False
+        return False
 
     def _is_port_in_use(self, port: int, retry: int = 3) -> bool:
         """Checks if a given port is already in use.
