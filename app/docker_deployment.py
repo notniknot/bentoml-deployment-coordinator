@@ -9,6 +9,7 @@ from bentoml.utils.tempdir import TempDirectory
 from bentoml.yatai.deployment.docker_utils import ensure_docker_available_or_raise
 from docker import DockerClient
 from docker.models.containers import Container
+from docker.types import Ulimit
 from fastapi import HTTPException, status
 
 from app.base_deployment import Deployment
@@ -130,7 +131,7 @@ class DockerDeployment(Deployment):
             for existing_container in existing_containers:
                 existing_container.start()
             for existing_container in existing_containers:
-                if self._is_service_healthy(int(existing_container.labels['port']), 7):
+                if self._is_service_healthy(int(existing_container.labels['port']), 20):
                     self.logger.debug(f'Restarted exited container: {existing_container.name}')
                 else:
                     self.logger.debug(
@@ -147,6 +148,7 @@ class DockerDeployment(Deployment):
                 bento_pb.name, bento_pb.version
             )
             safe_retrieve(bento_service_bundle_path, temp_bundle_path)
+
             try:
                 self.logger.debug(f'Building image for {self.name}:{self.version}.')
                 build_args = _get_config(('docker', 'build_args'))
@@ -155,9 +157,18 @@ class DockerDeployment(Deployment):
                     tag=self.image_name,
                     buildargs=build_args,
                     rm=True,
+                    forcerm=True,
                     timeout=DOCKER_TIMEOUT,
                 )
                 self.logger.debug(f'Built image {self.image_name}.')
+            except (docker.errors.BuildError, docker.errors.APIError, TypeError) as error:
+                error_msg = f'Docker returned an error when building the image ({type(error).__name__}): {error}'
+                self.logger.error(error_msg)
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=error_msg
+                )
+
+            try:
                 docker_client.containers.run(
                     image=self.image_name,
                     name=self.container_name,
@@ -170,26 +181,24 @@ class DockerDeployment(Deployment):
                         'port': str(port),
                         'workers': str(workers),
                     },
+                    ulimits=[Ulimit(name='core', soft=0, hard=0)],
                     detach=True,
                 )
                 self.logger.debug(f'Spinned up container {self.container_name}.')
-            except docker.errors.APIError as error:
-                self.logger.error(f'Docker server returned an error: {error}')
+            except (
+                docker.errors.ContainerError,
+                docker.errors.ImageNotFound,
+                docker.errors.APIError,
+            ) as error:
+                error_msg = f'Docker returned an error when running the container ({type(error).__name__}): {error}'
+                self.logger.error(error_msg)
                 raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f'Docker server returned an error: {error}',
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=error_msg
                 )
-            except docker.errors.BuildError as error:
-                self.logger.error(f'Encounter container building issue: {error}')
-            except docker.errors.ImageNotFound as error:
-                self.logger.error(
-                    f'The specified image ({self.image_name}) does not exist: {error}'
-                )
-            except docker.errors.ContainerError as error:
-                self.logger.error(f'The container exited with a non-zero exit code: {error}')
 
-        if not self._is_service_healthy(port, 9):
+        if not self._is_service_healthy(port, 20):
             self.logger.info('Could not deploy service: ...')
+            # ToDo: Stop container
             container = docker_client.containers.get(self.container_name)
             logs = container.logs().decode()
             raise HTTPException(
