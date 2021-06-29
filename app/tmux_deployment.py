@@ -181,8 +181,6 @@ class TmuxDeployment(Deployment):
             return
 
         session = server.new_session(session_name=self.session_name)
-        for k, v in _get_config('yatai').items():
-            session.set_environment(k, v)
         for k, v in _get_config('env_vars').items():
             session.set_environment(k, v)
         session.set_environment('model_name', self.name)
@@ -213,7 +211,7 @@ class TmuxDeployment(Deployment):
         pane.send_keys(
             f'bentoml serve-gunicorn --port {used_port} --workers {used_workers} {used_model}:{used_version}'
         )
-        if not self._is_service_healthy(used_port, 9):
+        if not self._is_service_healthy(used_port, 20):
             detail = '\n'.join(pane.capture_pane())
             pane.send_keys('C-c', enter=False, suppress_history=False)
             session.kill_session()
