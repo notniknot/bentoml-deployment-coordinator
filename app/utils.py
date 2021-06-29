@@ -42,7 +42,7 @@ def _distinct(obj_list: List[Any], attr: str) -> List[Any]:
     Returns:
         List[Any]: Reduced list of distinct objects.
     """
-    distinct_obj_list = []
+    distinct_obj_list: list = []
     for obj in obj_list:
         for distinct_obj in distinct_obj_list:
             if getattr(obj, attr) == getattr(distinct_obj, attr):
