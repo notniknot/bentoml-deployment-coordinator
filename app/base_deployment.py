@@ -8,13 +8,13 @@ from typing import Tuple
 import requests
 from bentoml.yatai.client import YataiClient, get_yatai_client
 
-# from bentoml.yatai.locking.lock import LockType, lock
+from bentoml.yatai.locking.lock import LockType, lock
 from bentoml.yatai.proto.repository_pb2 import Bento as BentoPB
 from fastapi import HTTPException, status
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from app.models import StageType
+from app.models import Stage
 from app.utils import _get_config
 
 
@@ -41,14 +41,14 @@ class Deployment(IDeployment, ABC):
         self,
         name: str,
         version: str,
-        stage: StageType,
+        stage: Stage,
     ):
         """Create instance of base deployment technique.
 
         Args:
             model (str): Name of the model.
             version (str): Version of the model.
-            stage (StageType): New stage of the model.
+            stage (Stage): New stage of the model.
         """
         os.environ['BENTOML_DO_NOT_TRACK'] = 'True'
         self.logger = self.init_logger()
@@ -100,18 +100,27 @@ class Deployment(IDeployment, ABC):
         """
         yatai_client = get_yatai_client()
         # ! For Version 0.12
-        bento_pb = yatai_client.yatai_service.bento_metadata_store.get(self.name, self.version)
+        # bento_pb = yatai_client.yatai_service.bento_metadata_store.get(self.name, self.version)
         # ! For Version 0.13
-        # db = yatai_client.yatai_service.db
-        # bento_id = f"{self.name}_{self.version}"
-        # with lock(db, [(bento_id, LockType.READ)]) as (sess, _):
-        #     bento_pb = db.metadata_store.get(sess, self.name, self.version)
+        db = yatai_client.yatai_service.db
+        bento_id = f"{self.name}_{self.version}"
+        with lock(db, [(bento_id, LockType.READ)]) as (sess, _):
+            bento_pb = db.metadata_store.get(sess, self.name, self.version)
         if bento_pb is None:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f'BentoService {self.name}:{self.version} does not exist in BentoML-Repo',
             )
         return yatai_client, bento_pb
+
+    def get_bentoml_args(self, args: dict):
+        str_args: str = ''
+        for k, v in args.items():
+            if isinstance(v, bool):
+                str_args += f' --{k}'
+            else:
+                str_args += f' --{k}={v}'
+        return str_args.lstrip()
 
     def _is_service_healthy(self, port: int, retries: int, backoff_time: int = 1) -> bool:
         """Checks healthz endpoint of BentoML model for life.

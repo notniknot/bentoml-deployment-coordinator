@@ -6,7 +6,12 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from starlette.responses import RedirectResponse
 
 from app.docker_deployment import DockerDeployment
-from app.models import DeployModelInput, RuntimeEnv, RuntimeEnvType, UndeployModelInput
+from app.models import (
+    DEFAULT_ARGS,
+    DeployModelInput,
+    RuntimeEnv,
+    UndeployModelInput,
+)
 from app.tmux_deployment import TmuxDeployment
 
 app = FastAPI(
@@ -41,11 +46,11 @@ def authenticate(credentials: HTTPBasicCredentials = Depends(security)) -> str:
     return credentials.username
 
 
-def get_runtime_env(runtime_env: RuntimeEnvType) -> Union[DockerDeployment, TmuxDeployment]:
+def get_runtime_env(runtime_env: RuntimeEnv) -> Union[DockerDeployment, TmuxDeployment]:
     """Choose appropriate runtime environment.
 
     Args:
-        runtime_env (RuntimeEnvType): Runtime environment enum
+        runtime_env (RuntimeEnv): Runtime environment enum
 
     Returns:
         Union[DockerDeployment, TmuxDeployment]: Either Docker- or Tmux-Class.
@@ -54,6 +59,8 @@ def get_runtime_env(runtime_env: RuntimeEnvType) -> Union[DockerDeployment, Tmux
         return DockerDeployment
     if runtime_env == RuntimeEnv.TMUX:
         return TmuxDeployment
+    else:
+        raise ValueError(f'Runtime env {runtime_env.value} not supported.')
 
 
 @app.get("/", include_in_schema=False)
@@ -73,9 +80,8 @@ async def start(model_content: DeployModelInput):
     runtime_env_instance = runtime_env(
         name=model_content.name, version=model_content.version, stage=model_content.stage
     )
-    response = runtime_env_instance.deploy_model(
-        port=model_content.port, workers=model_content.workers
-    )
+    DEFAULT_ARGS.update(model_content.args or dict())
+    response = runtime_env_instance.deploy_model(args=DEFAULT_ARGS)
     return Response(status_code=status.HTTP_200_OK, content=response)
 
 

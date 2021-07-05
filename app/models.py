@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import NewType
+from typing import Optional
 
 from pydantic import BaseModel
 
@@ -16,22 +16,20 @@ class Stage(Enum):
     ARCHIVED = 'Archived'
 
 
-RuntimeEnvType = NewType('Runtime', RuntimeEnv)
-StageType = NewType('Stage', Stage)
-
-
 class DeployModelInput(BaseModel):
     name: str
     version: str
-    stage: StageType = Stage.PRODUCTION
-    old_stage: StageType = Stage.NONE
-    port: int = 5000
-    workers: int = 1
-    runtime_env: RuntimeEnvType = RuntimeEnv.TMUX
+    stage: Stage
+    old_stage: Optional[Stage] = Stage.NONE
+    runtime_env: RuntimeEnv
+    args: Optional[dict] = None
 
 
 class UndeployModelInput(BaseModel):
     name: str
     version: str
-    old_stage: StageType = Stage.PRODUCTION
-    runtime_env: RuntimeEnvType = RuntimeEnv.TMUX
+    old_stage: Optional[Stage] = Stage.NONE
+    runtime_env: RuntimeEnv
+
+
+DEFAULT_ARGS = {'port': 5000}

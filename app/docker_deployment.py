@@ -1,3 +1,4 @@
+import json
 import random
 import re
 import string
@@ -13,39 +14,37 @@ from docker.types import Ulimit
 from fastapi import HTTPException, status
 
 from app.base_deployment import Deployment
-from app.models import Stage, StageType
+from app.models import Stage
 from app.utils import _distinct, _get_config
 
 DOCKER_TIMEOUT = 120
+STANDARD_PORT = 5000
 
 
 class DockerDeployment(Deployment):
-    def __init__(self, name: str, version: str = '', stage: StageType = Stage.NONE):
+    def __init__(self, name: str, version: str = '', stage: Stage = Stage.NONE):
         """Create instance of docker deployment technique.
 
         Args:
             model (str): Name of the model.
             version (str, optional): Version of the model. Defaults to ''.
-            stage (StageType, optional): New stage of the model. Defaults to Stage.NONE.
+            stage (Stage, optional): New stage of the model. Defaults to Stage.NONE.
         """
         super().__init__(name=name, stage=stage, version=version)
         name_clean = re.sub(r'\W+', '', self.name).lower()
         stage_clean = re.sub(r'\W+', '', self.stage).lower()
         random_string = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
-        self.image_name = f'bentoml_{name_clean}_{stage_clean}:{random_string}'  # ToDo: Version???
+        self.image_name = f'bentoml_{name_clean}_{stage_clean}:{random_string}'
         self.image_name_general = f'bentoml_{name_clean}_{stage_clean}'
-        self.container_name = (
-            f'bentoml_{name_clean}_{stage_clean}_{random_string}'  # ToDo: Random String necessary?
-        )
+        self.container_name = f'bentoml_{name_clean}_{stage_clean}_{random_string}'
         self.container_name_general = f'bentoml_{name_clean}_{stage_clean}'
         ensure_docker_available_or_raise()
 
-    def deploy_model(self, port: int, workers: int):
+    def deploy_model(self, args: dict):
         """Deploy model in docker container.
 
         Args:
-            port (int): Port to forward.
-            workers (int): Number of workers to spawn.
+            args (dict): Dictionary containing all the  arguments for the bentoml call.
 
         Raises:
             HTTPException: If port is already in use.
@@ -54,13 +53,14 @@ class DockerDeployment(Deployment):
         stopped_containers = self._stop_model_server(
             docker_client, find_by=['version', 'stage'], remove_container=False
         )
+        port = args['port']
         if self._is_port_in_use(port, 4):
             self.logger.error(f'Port {port} is already in use. Cleaning up...')
-            self._start_model_server(docker_client, existing_containers=stopped_containers)
+            self._start_model_server(docker_client, args, existing_containers=stopped_containers)
             raise HTTPException(
                 status.HTTP_502_BAD_GATEWAY, detail=f'Port {port} is already in use.'
             )
-        self._start_model_server(docker_client, port=port, workers=workers)
+        self._start_model_server(docker_client, args)
         self._stop_model_server(
             docker_client,
             find_by=['version', 'stage'],
@@ -102,27 +102,24 @@ class DockerDeployment(Deployment):
         containers = docker_client.containers.list(filters={'name': 'bentoml_'})
         containers_fmt = []
         for container in containers:
-            labels = ['name', 'version', 'stage', 'port', 'workers']
-            if not all(label in labels for label in container.labels):
+            labels = ['name', 'version', 'stage']
+            if not all(label in container.labels for label in labels):
                 continue
-            containers_fmt.append({label: container.labels[label] for label in labels})
+            container_labels = {label: container.labels[label] for label in labels}
+            container_labels['args'] = container.labels.get('args', dict())
+            containers_fmt.append(container_labels)
         logger.info(f'Running model containers: {str(containers_fmt)}')
         return containers_fmt
 
     def _start_model_server(
-        self,
-        docker_client: DockerClient,
-        existing_containers: list = None,
-        port: int = None,
-        workers: int = None,
+        self, docker_client: DockerClient, args: dict, existing_containers: list = None
     ):
         """Build and run the docker container.
 
         Args:
             docker_client (DockerClient): Docker client to use.
+            args (dict): Dictionary containing all the  arguments for the bentoml call.
             existing_containers (list, optional): List of existing containers that should be restarted. Defaults to None.
-            port (int, optional): Port to forward. Defaults to None.
-            workers (int, optional): Number of workers to spawn. Defaults to None.
 
         Raises:
             HTTPException: If docker container could not be built or run.
@@ -131,7 +128,8 @@ class DockerDeployment(Deployment):
             for existing_container in existing_containers:
                 existing_container.start()
             for existing_container in existing_containers:
-                if self._is_service_healthy(int(existing_container.labels['port']), 20):
+                port = int(json.loads(existing_container.labels['args'])['port'])
+                if self._is_service_healthy(port, 20):
                     self.logger.debug(f'Restarted exited container: {existing_container.name}')
                 else:
                     self.logger.debug(
@@ -172,14 +170,13 @@ class DockerDeployment(Deployment):
                 docker_client.containers.run(
                     image=self.image_name,
                     name=self.container_name,
-                    command=f'--workers={workers}',
-                    ports={5000: port},
+                    command=self.get_bentoml_args(args),
+                    ports={args['port']: args['port']},
                     labels={
                         'name': self.name,
                         'version': self.version,
                         'stage': self.stage,
-                        'port': str(port),
-                        'workers': str(workers),
+                        'args': json.dumps(args),
                     },
                     ulimits=[Ulimit(name='core', soft=0, hard=0)],
                     detach=True,
@@ -196,11 +193,13 @@ class DockerDeployment(Deployment):
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=error_msg
                 )
 
-        if not self._is_service_healthy(port, 20):
-            self.logger.info('Could not deploy service: ...')
-            # ToDo: Stop container
+        if not self._is_service_healthy(args['port'], 20):
+            self.logger.info(f'Could not deploy service for {self.container_name}')
             container = docker_client.containers.get(self.container_name)
             logs = container.logs().decode()
+            self.logger.info('Removing container.')
+            container.stop(timeout=10)
+            container.remove()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f'Could not deploy service.\n{logs}',

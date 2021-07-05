@@ -1,3 +1,4 @@
+import json
 import os
 import random
 import re
@@ -13,7 +14,7 @@ from fastapi import HTTPException, status
 from libtmux.exc import LibTmuxException
 
 from app.base_deployment import Deployment
-from app.models import Stage, StageType
+from app.models import Stage
 from app.utils import _distinct, _get_config
 
 
@@ -22,13 +23,13 @@ class TmuxDeployment(Deployment):
     BENTOML_FLASK_SERVING_STR = 'Serving Flask app'
     BENTOML_GUNICORN_SERVING_STR = 'Booting worker'
 
-    def __init__(self, name: str, version: str, stage: StageType = Stage.NONE):
+    def __init__(self, name: str, version: str, stage: Stage = Stage.NONE):
         """Create instance of tmux deployment technique.
 
         Args:
             model (str): Name of the model.
             version (str, optional): Version of the model. Defaults to ''.
-            stage (StageType, optional): New stage of the model. Defaults to Stage.NONE.
+            stage (Stage, optional): New stage of the model. Defaults to Stage.NONE.
         """
         super().__init__(name=name, version=version, stage=stage)
         name_clean = re.sub(r'\W+', '', self.name).lower()
@@ -41,12 +42,11 @@ class TmuxDeployment(Deployment):
         self.session_name = f'bentoml_{name_clean}_{stage_clean}_{random_string}'
         self.session_name_general = f'bentoml_{name_clean}_{stage_clean}'
 
-    def deploy_model(self, port: int, workers: int):
+    def deploy_model(self, args: dict):
         """Deploy model in tmux session.
 
         Args:
-            port (int): Port for Gunicorn to use.
-            workers (int): Number of workers to spawn.
+            args (dict): Dictionary containing all the  arguments for the bentoml call.
 
         Raises:
             HTTPException: If port is already in use.
@@ -55,15 +55,18 @@ class TmuxDeployment(Deployment):
         self._create_env_from_model()
         # ? Nicht nur Version, sondern auch Stage???
         stopped_sessions = self._stop_model_server(find_by=['version'], kill_session=False)
+        port = args['port']
         if self._is_port_in_use(port, 4):
             self.logger.error(f'Port {port} is already in use. Cleaning up...')
             self._delete_env_if_exists(specific_prefix=self.prefix)
-            self._start_model_server(server, existing_sessions=stopped_sessions, raise_error=False)
+            self._start_model_server(
+                server, args, existing_sessions=stopped_sessions, raise_error=False
+            )
             raise HTTPException(
                 status.HTTP_502_BAD_GATEWAY, detail=f'Port {port} is already in use.'
             )
         try:
-            self._start_model_server(server, workers=workers, port=port)
+            self._start_model_server(server, args)
             stopped_sessions = self._stop_model_server(
                 find_by=['stage', 'version'], kill_session=True, exclude=self.session_name
             )
@@ -76,7 +79,9 @@ class TmuxDeployment(Deployment):
             return 'Deployed model'
         except HTTPException as ex:
             self.logger.info('Model could not be deployed. Starting old model server if existing.')
-            self._start_model_server(server, existing_sessions=stopped_sessions, raise_error=False)
+            self._start_model_server(
+                server, args, existing_sessions=stopped_sessions, raise_error=False
+            )
             raise ex
 
     def undeploy_model(self):
@@ -151,9 +156,8 @@ class TmuxDeployment(Deployment):
     def _start_model_server(
         self,
         server: libtmux.Server,
+        args: dict,
         existing_sessions: List[libtmux.Session] = None,
-        port: int = None,
-        workers: int = None,
         raise_error: bool = True,
     ):
         """Create session and set environment variables.
@@ -186,9 +190,8 @@ class TmuxDeployment(Deployment):
         session.set_environment('model_name', self.name)
         session.set_environment('model_version', self.version)
         session.set_environment('model_stage', self.stage)
-        session.set_environment('model_port', port)
-        session.set_environment('model_workers', workers)
         session.set_environment('model_conda_prefix', self.prefix)
+        session.set_environment('args', json.dumps(args))
         self._launch_gunicorn_in_session(session, raise_error)
         self.logger.debug(f'Started model server: {session.name}.')
 
@@ -206,11 +209,11 @@ class TmuxDeployment(Deployment):
         pane.send_keys(f'conda activate {self.prefix}')
         used_model = session.show_environment('model_name')
         used_version = session.show_environment('model_version')
-        used_port = session.show_environment('model_port')
-        used_workers = session.show_environment('model_workers')
+        used_args = session.show_environment('args')
         pane.send_keys(
-            f'bentoml serve-gunicorn --port {used_port} --workers {used_workers} {used_model}:{used_version}'
+            f'bentoml serve-gunicorn {self.get_bentoml_args(json.loads(used_args))} {used_model}:{used_version}'
         )
+        used_port = int(json.loads(used_args)['port'])
         if not self._is_service_healthy(used_port, 20):
             detail = '\n'.join(pane.capture_pane())
             pane.send_keys('C-c', enter=False, suppress_history=False)
@@ -256,9 +259,8 @@ class TmuxDeployment(Deployment):
                 {
                     'used_model': session.show_environment('model_name'),
                     'used_version': session.show_environment('model_version'),
-                    'used_port': session.show_environment('model_port'),
-                    'used_workers': session.show_environment('model_workers'),
                     'used_conda_prefix': session.show_environment('model_conda_prefix'),
+                    'used_args': session.show_environment('args'),
                 }
             )
             self.logger.debug(f'Stopped model server: {session.name}')
