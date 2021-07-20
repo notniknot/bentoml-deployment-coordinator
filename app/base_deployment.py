@@ -1,13 +1,15 @@
 import logging
 import os
+import random
+import re
 import socket
+import string
 import time
 from abc import ABC, abstractmethod
 from typing import Tuple
 
 import requests
 from bentoml.yatai.client import YataiClient, get_yatai_client
-
 from bentoml.yatai.locking.lock import LockType, lock
 from bentoml.yatai.proto.repository_pb2 import Bento as BentoPB
 from fastapi import HTTPException, status
@@ -16,6 +18,8 @@ from urllib3.util.retry import Retry
 
 from app.models import Stage
 from app.utils import _get_config
+
+logger = logging.getLogger(f'coordinator.{__name__}')
 
 
 class IDeployment(ABC):
@@ -37,12 +41,7 @@ class IDeployment(ABC):
 
 
 class Deployment(IDeployment, ABC):
-    def __init__(
-        self,
-        name: str,
-        version: str,
-        stage: Stage,
-    ):
+    def __init__(self, name: str, version: str, stage: Stage, suffix: str = None):
         """Create instance of base deployment technique.
 
         Args:
@@ -51,11 +50,21 @@ class Deployment(IDeployment, ABC):
             stage (Stage): New stage of the model.
         """
         os.environ['BENTOML_DO_NOT_TRACK'] = 'True'
-        self.logger = self.init_logger()
-        self.logger.info(f'Initializing {type(self).__name__}: {name}:{version}')
+        logger.info(f'Initializing {type(self).__name__}: {name}:{version}')
+
         self.name = name
         self.version = version
         self.stage = stage.value
+        self.name_clean = re.sub(r'\W+', '', self.name).lower()
+        self.stage_clean = re.sub(r'\W+', '', self.stage).lower()
+
+        if suffix is not None:
+            self.suffix = suffix
+        else:
+            self.suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        self.prefix = 'bentoml'
+        self.deployment_name = f'{self.prefix}_{self.name_clean}_{self.stage_clean}_{self.suffix}'
+
         for k, v in _get_config('env_vars').items():
             os.environ[k] = v
 
@@ -74,20 +83,6 @@ class Deployment(IDeployment, ABC):
     def get_running_models(self):
         """Abstract method to get running models."""
         pass
-
-    @classmethod
-    def init_logger(self) -> logging.Logger:
-        """Configure root logger and set log level for coordinator logger.
-
-        Returns:
-            logging.Logger: Logging instance of 'coordinator'.
-        """
-        logging.basicConfig(format='[%(asctime)s] %(levelname)s  %(name)s: %(message)s')
-        logger = logging.getLogger('coordinator')
-        logger.setLevel(logging.DEBUG)
-        # ToDo: Write logs to file
-        # ToDo: Write normal exceptions to file as well
-        return logger
 
     def get_bentoml_model_by_version(self) -> Tuple[YataiClient, BentoPB]:
         """Retrieve model information from BentoML-Repository.
@@ -132,7 +127,7 @@ class Deployment(IDeployment, ABC):
         Returns:
             bool: Whether service is reachable or not.
         """
-        self.logger.debug('Checking for service health.')
+        logger.debug('Checking for service health.')
         logging.getLogger('urllib3.connectionpool').setLevel(logging.ERROR)
         session = requests.Session()
 
@@ -146,10 +141,10 @@ class Deployment(IDeployment, ABC):
         try:
             response = session.get(f'http://localhost:{port}/healthz', timeout=1)
             if response.status_code == 200:
-                self.logger.debug('Service up and running.')
+                logger.debug('Service up and running.')
                 return True
         except Exception:
-            self.logger.debug('Health check unsuccessful.')
+            logger.debug('Health check unsuccessful.')
         return False
 
     def _is_port_in_use(self, port: int, retry: int = 3) -> bool:

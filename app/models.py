@@ -23,6 +23,8 @@ class DeployModelInput(BaseModel):
     old_stage: Optional[Stage] = Stage.NONE
     runtime_env: RuntimeEnv
     args: Optional[dict] = None
+    batch_prediction: bool = False
+    airflow: Optional[dict] = None
 
 
 class UndeployModelInput(BaseModel):
@@ -30,6 +32,8 @@ class UndeployModelInput(BaseModel):
     version: str
     old_stage: Optional[Stage] = Stage.NONE
     runtime_env: RuntimeEnv
+    batch_prediction: bool = False
+    airflow: Optional[dict] = None
 
 
 DEFAULT_ARGS = {'port': 5000}

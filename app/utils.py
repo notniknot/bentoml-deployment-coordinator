@@ -1,7 +1,21 @@
+import logging
 import os
 from typing import Any, List, Union
 
 import yaml
+
+
+def init_logger():
+    """Configure root logger and set log level for coordinator logger.
+
+    Returns:
+        logging.Logger: Logging instance of 'coordinator'.
+    """
+    logging.basicConfig(format='[%(asctime)s] %(levelname)s  %(name)s: %(message)s')
+    logger = logging.getLogger('coordinator')
+    logger.setLevel(logging.DEBUG)
+    # ToDo: Write logs to file
+    # ToDo: Write normal exceptions to file as well
 
 
 def _get_config(key_or_path: Union[str, tuple]) -> dict:

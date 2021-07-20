@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import random
 import re
@@ -16,6 +17,8 @@ from libtmux.exc import LibTmuxException
 from app.base_deployment import Deployment
 from app.models import Stage
 from app.utils import _distinct, _get_config
+
+logger = logging.getLogger(f'coordinator.{__name__}')
 
 
 class TmuxDeployment(Deployment):
@@ -57,7 +60,7 @@ class TmuxDeployment(Deployment):
         stopped_sessions = self._stop_model_server(find_by=['version'], kill_session=False)
         port = args['port']
         if self._is_port_in_use(port, 4):
-            self.logger.error(f'Port {port} is already in use. Cleaning up...')
+            logger.error(f'Port {port} is already in use. Cleaning up...')
             self._delete_env_if_exists(specific_prefix=self.prefix)
             self._start_model_server(
                 server, args, existing_sessions=stopped_sessions, raise_error=False
@@ -74,11 +77,11 @@ class TmuxDeployment(Deployment):
                 self._delete_env_if_exists(
                     exclude=self.prefix, specific_prefix=session['used_conda_prefix']
                 )
-            self.logger.info(f'Deployed model in session: {self.session_name}')
+            logger.info(f'Deployed model in session: {self.session_name}')
             # ToDo: 'Unrecognized response type; displaying content as text.'
             return 'Deployed model'
         except HTTPException as ex:
-            self.logger.info('Model could not be deployed. Starting old model server if existing.')
+            logger.info('Model could not be deployed. Starting old model server if existing.')
             self._start_model_server(
                 server, args, existing_sessions=stopped_sessions, raise_error=False
             )
@@ -90,14 +93,15 @@ class TmuxDeployment(Deployment):
         Raises:
             HTTPException: If tmux session could not be stopped.
         """
+        # ToDo: Fix error "Model was not running"
         stopped_sessions = self._stop_model_server(find_by=['version'], kill_session=True)
         for stopped_session in stopped_sessions:
             self._delete_env_if_exists(specific_prefix=stopped_session['used_conda_prefix'])
         if len(stopped_sessions) > 0:
-            self.logger.info(f'Undeployed model (tmux): {self.name}, {self.version}')
+            logger.info(f'Undeployed model (tmux): {self.name}, {self.version}')
             return 'Successfully undeployed model'
         else:
-            self.logger.info(f'Model could not be undeployed: {self.name}, {self.version}')
+            logger.info(f'Model could not be undeployed: {self.name}, {self.version}')
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f'Model could not be undeployed: {self.name}, {self.version}',
@@ -172,14 +176,14 @@ class TmuxDeployment(Deployment):
         Raises:
             LibTmuxException: If old sessions could not be found to restart Gunicorn.
         """
-        self.logger.debug(f'Starting model server, existing_session={existing_sessions}.')
+        logger.debug(f'Starting model server, existing_session={existing_sessions}.')
 
         if isinstance(existing_sessions, list):
             for existing_session in existing_sessions:
                 self._launch_gunicorn_in_session(existing_session, raise_error)
-                self.logger.debug(f'Restarted stopped Session: {existing_session.name}')
+                logger.debug(f'Restarted stopped Session: {existing_session.name}')
             if len(existing_sessions) == 0:
-                self.logger.debug('Old Sessions could not be found.')
+                logger.debug('Old Sessions could not be found.')
                 if raise_error:
                     raise LibTmuxException('Old Sessions could not be found.')
             return
@@ -193,7 +197,7 @@ class TmuxDeployment(Deployment):
         session.set_environment('model_conda_prefix', self.prefix)
         session.set_environment('args', json.dumps(args))
         self._launch_gunicorn_in_session(session, raise_error)
-        self.logger.debug(f'Started model server: {session.name}.')
+        logger.debug(f'Started model server: {session.name}.')
 
     def _launch_gunicorn_in_session(self, session: libtmux.Session, raise_error: bool):
         """Launch Gunicorn in tmux session.
@@ -218,7 +222,7 @@ class TmuxDeployment(Deployment):
             detail = '\n'.join(pane.capture_pane())
             pane.send_keys('C-c', enter=False, suppress_history=False)
             session.kill_session()
-            self.logger.info(f'Could not deploy service: {detail}')
+            logger.info(f'Could not deploy service: {detail}')
             if raise_error:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -238,7 +242,7 @@ class TmuxDeployment(Deployment):
         Returns:
             List[dict]: List of stopped sessions.
         """
-        self.logger.debug(f'Stopping possible running model server, kill_session={kill_session}.')
+        logger.debug(f'Stopping possible running model server, kill_session={kill_session}.')
 
         sessions = []
         if 'version' in find_by:
@@ -263,12 +267,12 @@ class TmuxDeployment(Deployment):
                     'used_args': session.show_environment('args'),
                 }
             )
-            self.logger.debug(f'Stopped model server: {session.name}')
+            logger.debug(f'Stopped model server: {session.name}')
             if kill_session:
-                self.logger.debug(f'Killing (old) session: {session.name}')
+                logger.debug(f'Killing (old) session: {session.name}')
                 session.kill_session()
         if len(stopped_sessions) == 0:
-            self.logger.debug('No running sessions stopped.')
+            logger.debug('No running sessions stopped.')
         return stopped_sessions
 
     def _delete_env_if_exists(self, exclude: str = '', specific_prefix: str = None) -> bool:
@@ -281,7 +285,7 @@ class TmuxDeployment(Deployment):
         Returns:
             bool: Whether any conda enviornments could be deleted or not.
         """
-        self.logger.debug(f'Deleting conda environments: {self.prefix_general}')
+        logger.debug(f'Deleting conda environments: {self.prefix_general}')
         envs = run_command(Commands.INFO, '--envs')[0].split()
         found_envs = []
         if specific_prefix is not None and specific_prefix in envs:
@@ -294,9 +298,9 @@ class TmuxDeployment(Deployment):
             ]
         for env in found_envs:
             run_command(Commands.REMOVE, '--all', '--prefix', env)
-            self.logger.debug(f'Removed conda env: {env}')
+            logger.debug(f'Removed conda env: {env}')
         if len(found_envs) == 0:
-            self.logger.debug(f'No conda environments found: {self.prefix_general}')
+            logger.debug(f'No conda environments found: {self.prefix_general}')
             return False
         else:
             return True
@@ -307,7 +311,7 @@ class TmuxDeployment(Deployment):
         Raises:
             HTTPException: If conda environment could not be created.
         """
-        self.logger.debug(f'Creating new conda environment: {self.prefix}')
+        logger.debug(f'Creating new conda environment: {self.prefix}')
         _, bentoml_model = self.get_bentoml_model_by_version()
         bentoml_model_env = bentoml_model.bento_service_metadata.env
         python_version = bentoml_model_env.python_version
@@ -329,9 +333,9 @@ class TmuxDeployment(Deployment):
                 stdout=subprocess.PIPE,
             )
             if response.returncode < 0:
-                self.logger.error(f'Could not create conda env.\n{response.stderr.decode("utf-8")}')
+                logger.error(f'Could not create conda env.\n{response.stderr.decode("utf-8")}')
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f'Could not create conda env.\n{response.stderr.decode("utf-8")}',
                 )
-            self.logger.debug(f'Created new conda environment: {self.prefix}')
+            logger.debug(f'Created new conda environment: {self.prefix}')
