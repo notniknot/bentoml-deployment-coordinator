@@ -4,6 +4,7 @@ import re
 import shutil
 from pathlib import Path
 
+import docker
 import yaml
 from fastapi import HTTPException, status
 
@@ -61,18 +62,33 @@ class AirflowDeployment(Deployment):
 
     def undeploy_model(self, removed_containers: list):
         """Abstract method to undeploy model."""
+        docker_client = docker.from_env()
+        airflow_container_id = _get_config(('airflow', 'container_id'))
+        airflow_container = docker_client.containers.get(airflow_container_id)
         for removed_container in removed_containers:
             dag_path = self.dag_location / f'{removed_container.name}.py'
             if dag_path.is_file():
                 os.remove(str(dag_path))
+                logger.info(f'Deleted DAG file: {str(dag_path)}')
             else:
-                logger.warning(f'Dag file could not be found: {str(dag_path)}')
+                logger.warning(f'DAG file could not be found: {str(dag_path)}')
 
             yaml_path = self.dag_location / f'{removed_container.name}.yaml'
             if yaml_path.is_file():
                 os.remove(str(yaml_path))
+                logger.info(f'Deleted YAML file: {str(yaml_path)}')
             else:
                 logger.warning(f'YAML file could not be found: {str(yaml_path)}')
+
+            output = airflow_container.exec_run(
+                f'airflow dags delete -y {removed_container.name}', stderr=True, stdout=True
+            )
+            if output.exit_code != 0:
+                logger.warning(
+                    f'Airflow could not delete DAG for {removed_container.name}: {output.output.decode()}'
+                )
+            else:
+                logger.info(f'Deleted Airflow DAG: {removed_container.name}')
 
     @classmethod
     def get_running_models(self):

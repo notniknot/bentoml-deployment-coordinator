@@ -16,7 +16,7 @@ init_logger()
 logger = logging.getLogger(f'coordinator.{__name__}')
 
 app = FastAPI(
-    title='BentoML Deployment Coordinizer',
+    title='BentoML Deployment Coordinator',
     description='A webservice that provides endpoints to manage ML-Model-Deployments via BentoML in tmux-sessions or Docker containers',
     version='1.0',
 )

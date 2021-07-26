@@ -4,7 +4,7 @@ import logging
 import os
 import shutil
 from pathlib import Path
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Tuple
 
 import docker
 from bentoml.saved_bundle import safe_retrieve
@@ -185,8 +185,19 @@ class DockerDeployment(Deployment):
                 build_args = _get_config(('docker', 'build_args'))
                 docker_client.images.build(
                     path=temp_bundle_path,
-                    tag=self.image_name,
+                    tag=f'{self.image_name}-tmp',
                     buildargs=build_args,
+                    rm=True,
+                    forcerm=True,
+                    timeout=DOCKER_TIMEOUT,
+                )
+                logger.debug(f'Built image {self.image_name}-tmp.')
+                # Fix bentoml timeout error
+                logger.debug(f'Building fixed image for {self.name}:{self.version}.')
+                docker_client.images.build(
+                    path=_get_config(('docker', 'bentoml_fix')),
+                    tag=self.image_name,
+                    buildargs={'BASE_IMAGE': f'{self.image_name}-tmp'},
                     rm=True,
                     forcerm=True,
                     timeout=DOCKER_TIMEOUT,
@@ -251,7 +262,7 @@ class DockerDeployment(Deployment):
         find_by: List[Literal['version', 'stage']],
         remove_container: bool,
         exclude: str = '',
-    ) -> List[Container]:
+    ) -> Tuple[List[Container], List[Container]]:
         """Stop and (if required) remove the docker container.
 
         Args:
@@ -290,8 +301,15 @@ class DockerDeployment(Deployment):
             if remove_container:
                 logger.debug(f'Removing container: {deployment_name}')
                 container.remove()
-                logger.debug(f'Removing associated image: {container.image.tags[0]}')
+                logger.debug(f'Removing associated image: {container.attrs["Config"]["Image"]}')
                 docker_client.images.remove(image=container.attrs['Config']['Image'])
+                logger.debug(
+                    f'Removing associated tmp-image: {container.attrs["Config"]["Image"]}-tmp'
+                )
+                try:
+                    docker_client.images.remove(image=f'{container.attrs["Config"]["Image"]}-tmp')
+                except docker.errors.ImageNotFound:
+                    pass
                 self._handle_shared_volumes(action='remove', deployment_name=deployment_name)
                 removed_containers.append(container)
         if len(containers) == 0:

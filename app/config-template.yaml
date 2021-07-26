@@ -1,6 +1,16 @@
-yatai:
-  AWS_ACCESS_KEY_ID: example
-  AWS_SECRET_ACCESS_KEY: example
+docker:
+  build_args:
+    EXTRA_PIP_INSTALL_ARGS: --trusted-host <host> --extra-index-url http://<host>:<port>/simple/
+  container_location: /path/to/containers
+  bentoml_fix: /path/to/bentoml_fix
+
+airflow:
+  container_id: airflow_airflow-webserver_1
+  dag_template: /path/to/dag_template.py
+  dag_location: /path/to/dags
 
 env_vars:
-  ANOTHER_EXAMPLE: example
+  BENTOML_HOME: /path/to/bentoml
+  BENTOML_CONFIG: /path/to/bentoml.yml
+  AWS_ACCESS_KEY_ID: user
+  AWS_SECRET_ACCESS_KEY: secret

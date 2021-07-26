@@ -39,6 +39,8 @@ This repo is for engineers/data scientists who encountered the same problems whe
 - ???
 - Profit
 
+## Running
+`gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -t 320 -b 0.0.0.0:8000`
 
 # ToDos
 - Logic to check if tmux/docker is installed
