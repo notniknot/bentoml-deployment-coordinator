@@ -7,7 +7,8 @@ from typing import Any, Dict, Tuple
 import yaml
 from airflow.decorators import dag
 from airflow.exceptions import AirflowFailException
-from airflow.utils.dates import days_ago
+
+from utils.start_date import get_start_date_by_schedule
 
 dag_id = Path(__file__).stem
 
@@ -47,8 +48,7 @@ tasks, general = read_config()
 default_args = {
     'owner': general['owner'],
     'depends_on_past': False,
-    'retries': 1,
-    'retry_delay': timedelta(minutes=5),
+    'retries': 0,
     'execution_timeout': timedelta(seconds=general['execution_timeout']),
 }
 
@@ -58,7 +58,9 @@ default_args = {
     default_args=default_args,
     catchup=False,
     schedule_interval=general['schedule_interval'],
-    start_date=days_ago(2),
+    start_date=get_start_date_by_schedule(general['schedule_interval']),
+    is_paused_upon_creation=False,
+    max_active_runs=1,
     tags=['bentoml'],
 )
 def generic_taskflow_dag():
@@ -82,10 +84,14 @@ def generic_taskflow_dag():
         elif type == 'http':
             from custom_operators.CustomHTTPOperator import CustomHTTPOperator
             return CustomHTTPOperator
-        elif type == 'file_move':
-            from custom_operators.CustomFileMovementOperator import \
-                CustomFileMovementOperator
-            return CustomFileMovementOperator
+        elif type == 'oracle_upload':
+            from custom_operators.CustomOracleUploadOperator import \
+                CustomOracleUploadOperator
+            return CustomOracleUploadOperator
+        elif type == 'oracle_download':
+            from custom_operators.CustomOracleDownloadOperator import \
+                CustomOracleDownloadOperator
+            return CustomOracleDownloadOperator
         # fmt: on
 
     operators = []
