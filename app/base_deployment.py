@@ -35,12 +35,15 @@ class IDeployment(ABC):
 
     @classmethod
     @abstractmethod
-    def get_running_models(self):
+    def get_running_models(cls):
         """Abstract method to get running models."""
         pass
 
 
 class Deployment(IDeployment, ABC):
+
+    prefix = 'bentoml'
+
     def __init__(self, name: str, version: str, stage: Stage, suffix: str = None):
         """Create instance of base deployment technique.
 
@@ -62,8 +65,9 @@ class Deployment(IDeployment, ABC):
             self.suffix = suffix
         else:
             self.suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
-        self.prefix = 'bentoml'
-        self.deployment_name = f'{self.prefix}_{self.name_clean}_{self.stage_clean}_{self.suffix}'
+        self.deployment_name = (
+            f'{Deployment.prefix}_{self.name_clean}_{self.stage_clean}_{self.suffix}'
+        )
 
         for k, v in _get_config('env_vars').items():
             os.environ[k] = v
@@ -80,7 +84,7 @@ class Deployment(IDeployment, ABC):
 
     @classmethod
     @abstractmethod
-    def get_running_models(self):
+    def get_running_models(cls):
         """Abstract method to get running models."""
         pass
 

@@ -20,6 +20,7 @@ class DeployModelInput(BaseModel):
     name: str
     version: str
     stage: Stage
+    owner: str
     old_stage: Optional[Stage] = Stage.NONE
     runtime_env: RuntimeEnv
     args: Optional[dict] = None

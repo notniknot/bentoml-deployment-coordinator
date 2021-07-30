@@ -53,7 +53,8 @@ class AirflowDeployment(Deployment):
     def undeploy_model(self, removed_containers: list):
         """Abstract method to undeploy model."""
         for removed_container in removed_containers:
-            self.remove_dag(by=['name'], name=removed_container.name)
+            if removed_container.labels.get('batch_prediction', False) in [True, 'True']:
+                self.remove_dag(by=['name'], name=removed_container.name)
 
     def remove_dag(self, by: List[str], name: str = None):
         def remove_by(by_regex: re.Pattern = None, by_name: str = None):
@@ -84,13 +85,17 @@ class AirflowDeployment(Deployment):
         dags = set()
         if 'suffix' in by:
             regex_by_suffix = re.compile(
-                r'^{}_{}_\w+_{}.(?:py|yaml)$'.format(self.prefix, self.name_clean, self.suffix)
+                r'^{}_{}_\w+_{}.(?:py|yaml)$'.format(
+                    AirflowDeployment.prefix, self.name_clean, self.suffix
+                )
             )
             tmp_dags = remove_by(by_regex=regex_by_suffix)
             dags.update(tmp_dags)
         if 'stage' in by:
             regex_by_stage = re.compile(
-                r'^{}_{}_{}_\w+.(?:py|yaml)$'.format(self.prefix, self.name_clean, self.stage_clean)
+                r'^{}_{}_{}_\w+.(?:py|yaml)$'.format(
+                    AirflowDeployment.prefix, self.name_clean, self.stage_clean
+                )
             )
             tmp_dags = remove_by(by_regex=regex_by_stage)
             dags.update(tmp_dags)
@@ -114,13 +119,14 @@ class AirflowDeployment(Deployment):
                 logger.info(f'Deleted Airflow DAG: {dag}')
 
     @classmethod
-    def get_running_models(self):
+    def get_running_models(cls):
         """Abstract method to get running models."""
         dags = []
-        regex_all = re.compile(r'^{}_\w+_\w+_\w+.yaml$'.format(self.prefix))
-        for entry in os.scandir(self.dag_location):
+        dag_location = Path(_get_config(('airflow', 'dag_location')))
+        regex_all = re.compile(r'^{}_\w+_\w+_\w+.yaml$'.format(cls.prefix))
+        for entry in os.scandir(dag_location):
             if entry.is_file() and regex_all.match(entry.name):
-                with open('entry.path', 'r') as file:
+                with open(entry.path, 'r') as file:
                     config = yaml.safe_load(file)['airflow']
                 attrs = ['model', 'stage', 'version']
                 dags.append({k: v for k, v in config.items() if k in attrs})

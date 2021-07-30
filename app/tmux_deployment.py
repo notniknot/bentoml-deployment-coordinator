@@ -34,14 +34,17 @@ class TmuxDeployment(Deployment):
             version (str, optional): Version of the model. Defaults to ''.
             stage (Stage, optional): New stage of the model. Defaults to Stage.NONE.
         """
+
+        raise HTTPException(501, 'Tmux deployment is deprecated. Please use another method.')
+
         super().__init__(name=name, version=version, stage=stage)
         name_clean = re.sub(r'\W+', '', self.name).lower()
         stage_clean = re.sub(r'\W+', '', self.stage).lower()
         random_string = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
         self.env_name = f'bentoml_{name_clean}_{stage_clean}_{random_string}'
         self.env_name_general = f'bentoml_{name_clean}_{stage_clean}'
-        self.prefix = os.path.abspath(os.path.join('./envs', self.env_name))
-        self.prefix_general = os.path.abspath(os.path.join('./envs', self.env_name_general))
+        self.conda_prefix = os.path.abspath(os.path.join('./envs', self.env_name))
+        self.conda_prefix_general = os.path.abspath(os.path.join('./envs', self.env_name_general))
         self.session_name = f'bentoml_{name_clean}_{stage_clean}_{random_string}'
         self.session_name_general = f'bentoml_{name_clean}_{stage_clean}'
 
@@ -61,7 +64,7 @@ class TmuxDeployment(Deployment):
         port = args['port']
         if self._is_port_in_use(port, 4):
             logger.error(f'Port {port} is already in use. Cleaning up...')
-            self._delete_env_if_exists(specific_prefix=self.prefix)
+            self._delete_env_if_exists(specific_prefix=self.conda_prefix)
             self._start_model_server(
                 server, args, existing_sessions=stopped_sessions, raise_error=False
             )
@@ -75,7 +78,7 @@ class TmuxDeployment(Deployment):
             )
             for session in stopped_sessions:
                 self._delete_env_if_exists(
-                    exclude=self.prefix, specific_prefix=session['used_conda_prefix']
+                    exclude=self.conda_prefix, specific_prefix=session['used_conda_prefix']
                 )
             logger.info(f'Deployed model in session: {self.session_name}')
             # ToDo: 'Unrecognized response type; displaying content as text.'
@@ -109,7 +112,7 @@ class TmuxDeployment(Deployment):
 
     @classmethod
     def get_running_models(
-        self,
+        cls,
         name: str = None,
         version: str = None,
         session_name_start: str = None,
@@ -126,7 +129,6 @@ class TmuxDeployment(Deployment):
         Returns:
             List[dict]: Information about running models.
         """
-        logger = self.init_logger()
         server = libtmux.Server()
         try:
             sessions = server.list_sessions()
@@ -194,7 +196,7 @@ class TmuxDeployment(Deployment):
         session.set_environment('model_name', self.name)
         session.set_environment('model_version', self.version)
         session.set_environment('model_stage', self.stage)
-        session.set_environment('model_conda_prefix', self.prefix)
+        session.set_environment('model_conda_prefix', self.conda_prefix)
         session.set_environment('args', json.dumps(args))
         self._launch_gunicorn_in_session(session, raise_error)
         logger.debug(f'Started model server: {session.name}.')
@@ -210,7 +212,7 @@ class TmuxDeployment(Deployment):
             HTTPException: If model health check if unsuccessful.
         """
         pane = session.attached_pane
-        pane.send_keys(f'conda activate {self.prefix}')
+        pane.send_keys(f'conda activate {self.conda_prefix}')
         used_model = session.show_environment('model_name')
         used_version = session.show_environment('model_version')
         used_args = session.show_environment('args')
@@ -285,7 +287,7 @@ class TmuxDeployment(Deployment):
         Returns:
             bool: Whether any conda enviornments could be deleted or not.
         """
-        logger.debug(f'Deleting conda environments: {self.prefix_general}')
+        logger.debug(f'Deleting conda environments: {self.conda_prefix_general}')
         envs = run_command(Commands.INFO, '--envs')[0].split()
         found_envs = []
         if specific_prefix is not None and specific_prefix in envs:
@@ -294,13 +296,13 @@ class TmuxDeployment(Deployment):
             found_envs = [
                 env
                 for env in envs
-                if self.prefix_general in env and (not exclude or exclude not in env)
+                if self.conda_prefix_general in env and (not exclude or exclude not in env)
             ]
         for env in found_envs:
             run_command(Commands.REMOVE, '--all', '--prefix', env)
             logger.debug(f'Removed conda env: {env}')
         if len(found_envs) == 0:
-            logger.debug(f'No conda environments found: {self.prefix_general}')
+            logger.debug(f'No conda environments found: {self.conda_prefix_general}')
             return False
         else:
             return True
@@ -311,7 +313,7 @@ class TmuxDeployment(Deployment):
         Raises:
             HTTPException: If conda environment could not be created.
         """
-        logger.debug(f'Creating new conda environment: {self.prefix}')
+        logger.debug(f'Creating new conda environment: {self.conda_prefix}')
         _, bentoml_model = self.get_bentoml_model_by_version()
         bentoml_model_env = bentoml_model.bento_service_metadata.env
         python_version = bentoml_model_env.python_version
@@ -327,7 +329,7 @@ class TmuxDeployment(Deployment):
             with open(env_yml, 'w') as file:
                 yaml.safe_dump(config, file)
             response = subprocess.run(
-                args=f'bash -c "source activate root; conda env create --prefix {self.prefix} --file {env_yml}"',
+                args=f'bash -c "source activate root; conda env create --prefix {self.conda_prefix} --file {env_yml}"',
                 timeout=240,
                 shell=True,
                 stdout=subprocess.PIPE,
@@ -338,4 +340,4 @@ class TmuxDeployment(Deployment):
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f'Could not create conda env.\n{response.stderr.decode("utf-8")}',
                 )
-            logger.debug(f'Created new conda environment: {self.prefix}')
+            logger.debug(f'Created new conda environment: {self.conda_prefix}')

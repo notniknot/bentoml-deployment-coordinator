@@ -9,6 +9,7 @@ from starlette.responses import RedirectResponse
 from app.airflow_deployment import AirflowDeployment
 from app.docker_deployment import DockerDeployment
 from app.models import DEFAULT_ARGS, DeployModelInput, RuntimeEnv, UndeployModelInput
+from app.prometheus_deployment import PrometheusDeployment
 from app.tmux_deployment import TmuxDeployment
 from app.utils import init_logger
 
@@ -82,17 +83,29 @@ async def start(model_content: DeployModelInput):
         name=model_content.name, version=model_content.version, stage=model_content.stage
     )
     DEFAULT_ARGS.update(model_content.args or dict())
-    response = runtime_env_instance.deploy_model(args=DEFAULT_ARGS)
+    response = runtime_env_instance.deploy_model(
+        args=DEFAULT_ARGS, batch_prediction=model_content.batch_prediction
+    )
+
+    airflow = AirflowDeployment(
+        airflow=model_content.airflow,
+        name=model_content.name,
+        version=model_content.version,
+        suffix=response['suffix'],
+        stage=model_content.stage,
+    )
+    airflow.undeploy_model(response['removed_containers'])
     if model_content.batch_prediction is True and isinstance(model_content.airflow, dict):
-        airflow = AirflowDeployment(
-            airflow=model_content.airflow,
-            name=model_content.name,
-            version=model_content.version,
-            suffix=response['suffix'],
-            stage=model_content.stage,
-        )
-        airflow.undeploy_model(response['removed_containers'])
         airflow.deploy_model()
+
+    prometheus = PrometheusDeployment(
+        name=model_content.name,
+        version=model_content.version,
+        suffix=response['suffix'],
+        stage=model_content.stage,
+    )
+    prometheus.deploy_model(DEFAULT_ARGS['port'])
+
     return Response(
         status_code=status.HTTP_200_OK, content=f'Started {response["deployment_name"]}'
     )
@@ -108,11 +121,16 @@ async def stop(model_content: UndeployModelInput):
     runtime_env = get_runtime_env(model_content.runtime_env)
     runtime_env_instance = runtime_env(name=model_content.name, version=model_content.version)
     stopped_containers = runtime_env_instance.undeploy_model()
+
     if model_content.batch_prediction is True and isinstance(model_content.airflow, dict):
         airflow = AirflowDeployment(
             airflow=model_content.airflow, name=model_content.name, version=model_content.version
         )
         airflow.undeploy_model(stopped_containers)
+
+    prometheus = PrometheusDeployment(name=model_content.name, version=model_content.version)
+    prometheus.undeploy_model(stopped_containers)
+
     return Response(status_code=status.HTTP_200_OK, content=f'Stopped {stopped_containers}')
 
 
@@ -126,4 +144,5 @@ async def running():
         'tmux': TmuxDeployment.get_running_models(),
         'docker': DockerDeployment.get_running_models(),
         'airflow': AirflowDeployment.get_running_models(),
+        'prometheus': PrometheusDeployment.get_running_models(),
     }

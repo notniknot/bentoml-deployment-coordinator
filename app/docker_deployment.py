@@ -35,10 +35,12 @@ class DockerDeployment(Deployment):
             stage (Stage, optional): New stage of the model. Defaults to Stage.NONE.
         """
         super().__init__(name=name, stage=stage, version=version)
-        self.image_name = f'{self.prefix}_{self.name_clean}_{self.stage_clean}:{self.suffix}'
+        self.image_name = (
+            f'{DockerDeployment.prefix}_{self.name_clean}_{self.stage_clean}:{self.suffix}'
+        )
         ensure_docker_available_or_raise()
 
-    def deploy_model(self, args: dict):
+    def deploy_model(self, args: dict, batch_prediction: bool):
         """Deploy model in docker container.
 
         Args:
@@ -54,11 +56,11 @@ class DockerDeployment(Deployment):
         port = args['port']
         if self._is_port_in_use(port, 4):
             logger.error(f'Port {port} is already in use. Cleaning up...')
-            self._start_model_server(docker_client, args, existing_containers=stopped_containers)
+            self._start_model_server(docker_client, args, batch_prediction, stopped_containers)
             raise HTTPException(
                 status.HTTP_502_BAD_GATEWAY, detail=f'Port {port} is already in use.'
             )
-        self._start_model_server(docker_client, args)
+        self._start_model_server(docker_client, args, batch_prediction)
         _, removed_containers = self._stop_model_server(
             docker_client,
             find_by=['version', 'stage'],
@@ -92,18 +94,17 @@ class DockerDeployment(Deployment):
             )
 
     @classmethod
-    def get_running_models(self) -> List[dict]:
+    def get_running_models(cls) -> List[dict]:
         """Get running models in docker containers.
 
         Returns:
             List[dict]: Information about running models.
         """
-        logger = self.init_logger()
         docker_client = docker.from_env()
         containers = docker_client.containers.list(filters={'name': 'bentoml_'})
         containers_fmt = []
         for container in containers:
-            labels = ['name', 'version', 'stage']
+            labels = ['name', 'version', 'stage', 'batch_prediction']
             if not all(label in container.labels for label in labels):
                 continue
             container_labels = {label: container.labels[label] for label in labels}
@@ -147,7 +148,11 @@ class DockerDeployment(Deployment):
         return None
 
     def _start_model_server(
-        self, docker_client: DockerClient, args: dict, existing_containers: list = None
+        self,
+        docker_client: DockerClient,
+        args: dict,
+        batch_prediction: bool,
+        existing_containers: list = None,
     ):
         """Build and run the docker container.
 
@@ -229,6 +234,7 @@ class DockerDeployment(Deployment):
                     'version': self.version,
                     'stage': self.stage,
                     'args': json.dumps(args),
+                    'batch_prediction': str(batch_prediction),
                 },
                 ulimits=[Ulimit(name='core', soft=0, hard=0)],
                 detach=True,
