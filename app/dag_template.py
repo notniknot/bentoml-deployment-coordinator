@@ -4,11 +4,10 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
+import pendulum
 import yaml
 from airflow.decorators import dag
 from airflow.exceptions import AirflowFailException
-
-from utils.start_date import get_start_date_by_schedule
 
 dag_id = Path(__file__).stem
 
@@ -58,7 +57,7 @@ default_args = {
     default_args=default_args,
     catchup=False,
     schedule_interval=general['schedule_interval'],
-    start_date=get_start_date_by_schedule(general['schedule_interval']),
+    start_date=pendulum.instance(general['start_date']).in_timezone('CET'),
     is_paused_upon_creation=False,
     max_active_runs=1,
     tags=['bentoml'],
@@ -74,9 +73,9 @@ def generic_taskflow_dag():
                 CustomS3FileDownloadOperator
             return CustomS3FileDownloadOperator
         elif type == 's3_upload':
-            from custom_operators.CustomS3FileUploadOperator import \
-                CustomS3FileUploadOperator
-            return CustomS3FileUploadOperator
+            from custom_operators.CustomS3UploadOperator import \
+                CustomS3UploadOperator
+            return CustomS3UploadOperator
         elif type == 's3_remove':
             from custom_operators.CustomS3FileRemovalOperator import \
                 CustomS3FileRemovalOperator
