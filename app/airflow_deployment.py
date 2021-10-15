@@ -2,11 +2,17 @@ import logging
 import os
 import re
 import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import List
 
 import docker
+import pendulum
+import pytz
 import yaml
+from airflow.utils import timezone
+from airflow.utils.dates import cron_presets, days_ago
+from croniter import croniter
 from fastapi import HTTPException, status
 
 from app.base_deployment import Deployment
@@ -47,6 +53,9 @@ class AirflowDeployment(Deployment):
             )
         self.remove_dag(by=['suffix', 'stage'])
         shutil.copy(str(self.dag_template), str(self.dag_location / f'{self.deployment_name}.py'))
+        self.airflow['airflow']['start_date'] = self._get_start_date_by_schedule(
+            self.airflow['airflow']['schedule_interval']
+        )
         with open(str(self.dag_location / f'{self.deployment_name}.yaml'), 'w') as file:
             yaml.safe_dump(self.airflow, file)
 
@@ -131,3 +140,39 @@ class AirflowDeployment(Deployment):
                 attrs = ['model', 'stage', 'version']
                 dags.append({k: v for k, v in config.items() if k in attrs})
         return dags
+
+    def _normalize_schedule_interval(self, schedule_interval):
+        """
+        Returns Normalized Schedule Interval. This is used internally by the Scheduler to
+        schedule DAGs.
+
+        1. Converts Cron Preset to a Cron Expression (e.g ``@monthly`` to ``0 0 1 * *``)
+        2. If Schedule Interval is "@once" return "None"
+        3. If not (1) or (2) returns schedule_interval
+        """
+        if isinstance(schedule_interval, str) and schedule_interval in cron_presets:
+            _schedule_interval = cron_presets.get(schedule_interval)
+        elif schedule_interval == '@once':
+            _schedule_interval = None
+        else:
+            _schedule_interval = schedule_interval
+        return _schedule_interval
+
+    def _get_start_date_by_schedule(self, schedule_interval):
+        """
+        Calculates the following schedule for this dag in UTC.
+
+        :param dttm: utc datetime
+        :return: utc datetime
+        """
+        normalized_schedule_interval = self._normalize_schedule_interval(schedule_interval)
+        if isinstance(normalized_schedule_interval, str):
+            dttm = pendulum.now('Europe/Berlin')
+            naive = timezone.make_naive(dttm, dttm.tzinfo)
+            cron = croniter(normalized_schedule_interval, naive)
+            corrected_time = datetime.fromtimestamp(
+                cron.get_prev(), dttm.tzinfo
+            ) - dttm.tzinfo.utcoffset(dttm)
+            return corrected_time
+        else:
+            return days_ago(1)

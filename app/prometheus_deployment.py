@@ -96,6 +96,9 @@ class PrometheusDeployment(Deployment):
             if name is None:
                 raise ValueError('Parameter "name" cannot be None')
             to_delete += remove_by(by_name=name)
+        if len(to_delete) > 0:
+            to_delete_info = [item['labels']['deployment_name'] for item in to_delete]
+            logger.info(f'Undeploying {to_delete_info} from Prometheus.')
         self.targets = [target for target in self.targets if target not in to_delete]
 
     @classmethod
