@@ -25,7 +25,13 @@
 
 
 # Addressed Issues
-This repo expands the functionality of BentoML
+This repo coordinates the deployment of ML-Models via BentoML adding the following aspects:
+- Start the deployment with custom parameters
+- Check if the deployment was successful
+- Automatically retire old versions of the same model
+- Rollback if deployment was unsuccessful
+- Adding the service to Prometheus
+- Adding Airflow DAGs for Batch Prediction
 
 
 # Target Group
@@ -35,9 +41,8 @@ This repo is for engineers/data scientists who encountered the same problems whe
 # Setup
 ## Installation
 - Make sure either Docker is installed and user has Docker rights or tmux is installed
+- Airflow and Prometheus are optional
 - Create conda env from environment.yml
-- ???
-- Profit
 
 ## Running
 `gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -t 320 -b 0.0.0.0:8000`
